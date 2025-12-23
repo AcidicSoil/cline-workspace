@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cline Workflow Pack | Interactive Project Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; color: #334155; }
+
+        /* Custom Scrollbar for internal containers */
+        .custom-scroll::-webkit-scrollbar { width: 6px; }
+        .custom-scroll::-webkit-scrollbar-track { background: #f1f5f9; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        .custom-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        /* Chart Container Styling (Mandatory) */
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 600px; /* Max width to prevent stretching */
+            margin-left: auto;
+            margin-right: auto;
+            height: 300px; /* Base height */
+            max-height: 400px;
+        }
+        @media (min-width: 768px) {
+            .chart-container { height: 350px; }
+        }
+
+        /* Architecture Block Hover Effects */
+        .arch-block { transition: all 0.2s ease; cursor: pointer; }
+        .arch-block:hover { transform: translateY(-2px); box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); border-color: #3b82f6; }
+        .arch-block.active { border-color: #2563eb; background-color: #eff6ff; }
+
+        /* Tab Transitions */
+        .tab-content { display: none; animation: fadeIn 0.3s ease-in-out; }
+        .tab-content.active { display: block; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+    <!-- Chosen Palette: Warm Neutrals (Slate) with Blue/Indigo Accents for professional clarity. -->
+    <!-- Application Structure Plan: Dashboard layout with top-level navigation tabs.
+         1. Overview: High-level 'Why' and 'What' (PRD Summary).
+         2. Task Explorer: Deep dive into the tasks.json data.
+         3. Architecture: Visual system map.
+         4. Analytics: Quantitative project health.
+         This structure separates high-level context from granular data. -->
+    <!-- Visualization & Content Choices:
+         - Overview: KPI Cards for Success Metrics (Goal: Inform).
+         - Tasks: Accordion/List view for hierarchy (Goal: Organize).
+         - Architecture: CSS Grid blocks for modules (Goal: Relationships - No Mermaid).
+         - Analytics: Chart.js Doughnut/Bar for status/complexity (Goal: Compare - No SVG).
+    -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+</head>
+<body class="flex flex-col min-h-screen">
+
+    <!-- Header -->
+    <header class="bg-white border-b border-slate-200 sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16 items-center">
+                <div class="flex items-center gap-3">
+                    <div class="h-8 w-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold">C</div>
+                    <div>
+                        <h1 class="text-xl font-bold text-slate-800">Cline Workflow Pack</h1>
+                        <p class="text-xs text-slate-500">Interactive Project Context & Roadmap</p>
+                    </div>
+                </div>
+                <nav class="hidden md:flex space-x-8">
+                    <button onclick="switchTab('overview')" class="nav-btn text-indigo-600 border-indigo-600 border-b-2 px-1 pt-1 text-sm font-medium" data-tab="overview">Overview</button>
+                    <button onclick="switchTab('tasks')" class="nav-btn text-slate-500 hover:text-slate-700 hover:border-slate-300 border-b-2 border-transparent px-1 pt-1 text-sm font-medium" data-tab="tasks">Task Explorer</button>
+                    <button onclick="switchTab('architecture')" class="nav-btn text-slate-500 hover:text-slate-700 hover:border-slate-300 border-b-2 border-transparent px-1 pt-1 text-sm font-medium" data-tab="architecture">Architecture</button>
+                    <button onclick="switchTab('analytics')" class="nav-btn text-slate-500 hover:text-slate-700 hover:border-slate-300 border-b-2 border-transparent px-1 pt-1 text-sm font-medium" data-tab="analytics">Analytics</button>
+                </nav>
+            </div>
+        </div>
+        <!-- Mobile Nav -->
+        <div class="md:hidden flex justify-around border-t border-slate-100 py-2 bg-slate-50">
+            <button onclick="switchTab('overview')" class="text-xs font-medium text-indigo-600">Overview</button>
+            <button onclick="switchTab('tasks')" class="text-xs font-medium text-slate-500">Tasks</button>
+            <button onclick="switchTab('architecture')" class="text-xs font-medium text-slate-500">Arch</button>
+            <button onclick="switchTab('analytics')" class="text-xs font-medium text-slate-500">Stats</button>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-grow max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
+
+        <!-- TAB: OVERVIEW -->
+        <section id="overview" class="tab-content active">
+            <div class="mb-8">
+                <h2 class="text-2xl font-bold text-slate-900 mb-2">Executive Summary</h2>
+                <p class="text-slate-600 max-w-3xl">
+                    This dashboard provides a unified view of the Cline Workflow Pack project. The goal is to standardize software engineering automations using the Cline CLI, solving the problem of brittle, scattered scripts by introducing a robust runner library and defined workflow gates.
+                </p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                <!-- KPI Card 1 -->
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                    <h3 class="text-sm font-medium text-slate-500 uppercase tracking-wider">Target Success Metric</h3>
+                    <div class="mt-2 flex items-baseline">
+                        <span class="text-3xl font-bold text-indigo-600">≥80%</span>
+                    </div>
+                    <p class="mt-1 text-sm text-slate-600">Headless runs without intervention</p>
+                </div>
+                <!-- KPI Card 2 -->
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                    <h3 class="text-sm font-medium text-slate-500 uppercase tracking-wider">Current Phase</h3>
+                    <div class="mt-2 flex items-baseline">
+                        <span class="text-3xl font-bold text-amber-500">Phase 0/1</span>
+                    </div>
+                    <p class="mt-1 text-sm text-slate-600">Foundation & Execution Layers</p>
+                </div>
+                <!-- KPI Card 3 -->
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                    <h3 class="text-sm font-medium text-slate-500 uppercase tracking-wider">Total Tasks</h3>
+                    <div class="mt-2 flex items-baseline">
+                        <span class="text-3xl font-bold text-slate-800" id="total-tasks-count">0</span>
+                    </div>
+                    <p class="mt-1 text-sm text-slate-600">Across 4 Development Phases</p>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                    <h3 class="text-lg font-bold text-slate-900 mb-4">Core Problem & Solution</h3>
+                    <div class="space-y-4">
+                        <div class="flex gap-4">
+                            <div class="flex-shrink-0 w-8 h-8 rounded-full bg-red-100 flex items-center justify-center text-red-600 font-bold">!</div>
+                            <div>
+                                <h4 class="font-medium text-slate-900">Problem</h4>
+                                <p class="text-sm text-slate-600">Teams struggle with inconsistent automation. Workflow scripts (PR reviews, linting) are scattered, duplicated, and lack standardized safety gates.</p>
+                            </div>
+                        </div>
+                        <div class="flex gap-4">
+                            <div class="flex-shrink-0 w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-green-600 font-bold">✓</div>
+                            <div>
+                                <h4 class="font-medium text-slate-900">Solution</h4>
+                                <p class="text-sm text-slate-600">A "Workflow Pack" containing a TypeScript runner library and standardized Markdown prompts. It provides reliable, headless AI automation for common tasks like PR gates and changelog generation.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                    <h3 class="text-lg font-bold text-slate-900 mb-4">Key Capabilities</h3>
+                    <ul class="space-y-3">
+                        <li class="flex items-center gap-3 text-sm text-slate-700">
+                            <span class="w-2 h-2 bg-indigo-500 rounded-full"></span>
+                            <span><strong>Workflow Catalog:</strong> JSON-based registry of capabilities.</span>
+                        </li>
+                        <li class="flex items-center gap-3 text-sm text-slate-700">
+                            <span class="w-2 h-2 bg-indigo-500 rounded-full"></span>
+                            <span><strong>Headless Execution:</strong> Run AI tasks in CI without UI.</span>
+                        </li>
+                        <li class="flex items-center gap-3 text-sm text-slate-700">
+                            <span class="w-2 h-2 bg-indigo-500 rounded-full"></span>
+                            <span><strong>Safety Gating:</strong> "ALLOW/BLOCK" parsing for risk reviews.</span>
+                        </li>
+                        <li class="flex items-center gap-3 text-sm text-slate-700">
+                            <span class="w-2 h-2 bg-indigo-500 rounded-full"></span>
+                            <span><strong>Standard Reporting:</strong> Artifacts generated for every run.</span>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB: TASK EXPLORER -->
+        <section id="tasks" class="tab-content">
+            <div class="mb-6">
+                <h2 class="text-2xl font-bold text-slate-900 mb-2">Task Explorer</h2>
+                <p class="text-slate-600">Explore the 10 core tasks defined in the project plan. Use the filters to narrow down the view or click a task to see subtasks and dependencies.</p>
+            </div>
+
+            <!-- Filters -->
+            <div class="flex flex-wrap gap-4 mb-6">
+                <div class="relative">
+                    <select id="priority-filter" onchange="renderTasks()" class="appearance-none bg-white border border-slate-300 text-slate-700 py-2 px-4 pr-8 rounded leading-tight focus:outline-none focus:border-indigo-500">
+                        <option value="all">All Priorities</option>
+                        <option value="high">High Priority</option>
+                        <option value="medium">Medium Priority</option>
+                    </select>
+                    <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-700">▼</div>
+                </div>
+                <div class="relative">
+                    <select id="status-filter" onchange="renderTasks()" class="appearance-none bg-white border border-slate-300 text-slate-700 py-2 px-4 pr-8 rounded leading-tight focus:outline-none focus:border-indigo-500">
+                        <option value="all">All Statuses</option>
+                        <option value="pending">Pending</option>
+                        <option value="in_progress">In Progress</option>
+                        <option value="completed">Completed</option>
+                    </select>
+                    <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-700">▼</div>
+                </div>
+            </div>
+
+            <!-- Task List Container -->
+            <div id="task-list" class="space-y-4">
+                <!-- Tasks injected via JS -->
+            </div>
+        </section>
+
+        <!-- TAB: ARCHITECTURE -->
+        <section id="architecture" class="tab-content">
+            <div class="mb-6">
+                <h2 class="text-2xl font-bold text-slate-900 mb-2">System Architecture</h2>
+                <p class="text-slate-600">Interactive map of the project structure. Click on a module block to view its responsibilities and exports.</p>
+            </div>
+
+            <div class="flex flex-col lg:flex-row gap-8">
+                <!-- Diagram Side -->
+                <div class="lg:w-2/3 bg-slate-100 p-6 rounded-xl border border-slate-200">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <!-- Column 1: Pack -->
+                        <div class="flex flex-col gap-4">
+                            <h4 class="text-xs font-bold text-slate-400 uppercase text-center">Templates</h4>
+                            <div onclick="showModuleInfo('pack')" class="arch-block bg-amber-50 p-4 rounded-lg border border-amber-200 text-center">
+                                <div class="font-bold text-amber-800">pack/</div>
+                                <div class="text-xs text-amber-600 mt-1">Workflows & Scripts</div>
+                            </div>
+                        </div>
+
+                        <!-- Column 2: Src (Core) -->
+                        <div class="flex flex-col gap-4">
+                            <h4 class="text-xs font-bold text-slate-400 uppercase text-center">Core Library (src/)</h4>
+
+                            <!-- Layer 1: Foundation -->
+                            <div class="grid grid-cols-2 gap-2">
+                                <div onclick="showModuleInfo('manifest')" class="arch-block bg-white p-3 rounded shadow-sm border border-slate-200 text-center">
+                                    <div class="font-bold text-slate-700 text-sm">manifest</div>
+                                </div>
+                                <div onclick="showModuleInfo('report')" class="arch-block bg-white p-3 rounded shadow-sm border border-slate-200 text-center">
+                                    <div class="font-bold text-slate-700 text-sm">report</div>
+                                </div>
+                            </div>
+
+                            <!-- Layer 2: Execution -->
+                            <div class="grid grid-cols-1 gap-2">
+                                <div onclick="showModuleInfo('cline')" class="arch-block bg-indigo-50 p-3 rounded shadow-sm border border-indigo-200 text-center">
+                                    <div class="font-bold text-indigo-700 text-sm">cline</div>
+                                    <div class="text-xs text-indigo-500">Execution Wrapper</div>
+                                </div>
+                            </div>
+
+                            <!-- Layer 3: Integration -->
+                            <div class="grid grid-cols-2 gap-2">
+                                <div onclick="showModuleInfo('git')" class="arch-block bg-white p-3 rounded shadow-sm border border-slate-200 text-center">
+                                    <div class="font-bold text-slate-700 text-sm">git</div>
+                                </div>
+                                <div onclick="showModuleInfo('github')" class="arch-block bg-white p-3 rounded shadow-sm border border-slate-200 text-center">
+                                    <div class="font-bold text-slate-700 text-sm">github</div>
+                                </div>
+                            </div>
+
+                            <!-- Layer 4: Gating -->
+                            <div onclick="showModuleInfo('gating')" class="arch-block bg-rose-50 p-3 rounded shadow-sm border border-rose-200 text-center">
+                                <div class="font-bold text-rose-700 text-sm">gating</div>
+                                <div class="text-xs text-rose-500">Verdict Parsing</div>
+                            </div>
+                             <!-- Layer 5: Install -->
+                             <div onclick="showModuleInfo('install')" class="arch-block bg-emerald-50 p-3 rounded shadow-sm border border-emerald-200 text-center">
+                                <div class="font-bold text-emerald-700 text-sm">install</div>
+                                <div class="text-xs text-emerald-500">Bootstrapper</div>
+                            </div>
+                        </div>
+
+                        <!-- Column 3: Bin -->
+                        <div class="flex flex-col gap-4">
+                            <h4 class="text-xs font-bold text-slate-400 uppercase text-center">CLI</h4>
+                            <div onclick="showModuleInfo('bin')" class="arch-block bg-slate-800 p-4 rounded-lg border border-slate-700 text-center text-white">
+                                <div class="font-bold">bin/cline-pack</div>
+                                <div class="text-xs text-slate-400 mt-1">Entry Point</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Info Side -->
+                <div class="lg:w-1/3 bg-white p-6 rounded-xl border border-slate-200 h-fit sticky top-24">
+                    <h3 id="module-title" class="text-xl font-bold text-slate-900 mb-2">Select a Module</h3>
+                    <div id="module-content" class="text-slate-600 text-sm space-y-4">
+                        <p>Click on any block in the architecture diagram to see detailed information about its responsibilities, exports, and dependencies.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- TAB: ANALYTICS -->
+        <section id="analytics" class="tab-content">
+            <div class="mb-6">
+                <h2 class="text-2xl font-bold text-slate-900 mb-2">Project Analytics</h2>
+                <p class="text-slate-600">Quantitative insights into the project's task distribution, complexity, and testing strategy.</p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <!-- Chart 1: Status Distribution -->
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                    <h3 class="text-lg font-semibold text-slate-800 mb-4">Task Status Breakdown</h3>
+                    <div class="chart-container">
+                        <canvas id="statusChart"></canvas>
+                    </div>
+                    <p class="text-xs text-slate-500 mt-4 text-center">Distribution of tasks by current status.</p>
+                </div>
+
+                <!-- Chart 2: Task Complexity -->
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                    <h3 class="text-lg font-semibold text-slate-800 mb-4">Task Complexity (Subtasks)</h3>
+                    <div class="chart-container">
+                        <canvas id="complexityChart"></canvas>
+                    </div>
+                    <p class="text-xs text-slate-500 mt-4 text-center">Number of subtasks per main task, indicating implementation effort.</p>
+                </div>
+
+                <!-- Chart 3: Testing Strategy -->
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 md:col-span-2">
+                    <h3 class="text-lg font-semibold text-slate-800 mb-4">Testing Strategy Coverage</h3>
+                    <div class="chart-container">
+                        <canvas id="testStrategyChart"></canvas>
+                    </div>
+                    <p class="text-xs text-slate-500 mt-4 text-center">Breakdown of primary testing methodologies defined in the tasks.</p>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <footer class="bg-white border-t border-slate-200 mt-auto py-6">
+        <div class="max-w-7xl mx-auto px-4 text-center text-slate-400 text-sm">
+            Generated based on Project PRD and Task List.
+        </div>
+    </footer>
+
+    <script>
+        // --- DATA STORAGE ---
+        // Tasks imported directly from the provided JSON context
+        const projectData = {
+            "tasks": [
+                {
+                    "id": 1,
+                    "title": "Initialize Project Structure and Implement Manifest Module",
+                    "description": "Set up the repository structure and implement the Manifest module to define workflow metadata and the catalog API.",
+                    "details": "Create the directory structure: src/{manifest,install,cline,git,github,gating,render,report}. Implement src/manifest/index.ts exporting loadManifest, listWorkflows, and getWorkflow. Define the WorkflowInfo interface including id, name, mode, prerequisites, inputs, and outputs.",
+                    "priority": "high",
+                    "status": "pending",
+                    "subtasks": [
+                        { "id": 1, "title": "Initialize TypeScript Project", "status": "pending" },
+                        { "id": 2, "title": "Define WorkflowInfo Interfaces", "status": "pending" },
+                        { "id": 3, "title": "Implement Manifest Module", "status": "pending" }
+                    ],
+                    "testStrategy": "Unit tests"
+                },
+                {
+                    "id": 2,
+                    "title": "Implement Render and Report Modules",
+                    "description": "Develop the foundation modules for prompt templating and artifact reporting/logging.",
+                    "details": "Implement src/render for template interpolation and src/report for atomic artifact writing.",
+                    "priority": "high",
+                    "status": "pending",
+                    "subtasks": [
+                        { "id": 1, "title": "Implement src/render", "status": "pending" },
+                        { "id": 2, "title": "Implement src/report", "status": "pending" }
+                    ],
+                    "testStrategy": "Unit tests"
+                },
+                {
+                    "id": 3,
+                    "title": "Implement Git and Cline Execution Wrappers",
+                    "description": "Create wrappers for Git operations and the Cline CLI to enable headless and interactive execution.",
+                    "details": "Implement src/git for diffs and logs. Implement src/cline for runHeadless and runInteractive.",
+                    "priority": "high",
+                    "status": "pending",
+                    "subtasks": [
+                        { "id": 1, "title": "Implement Git Core Wrapper", "status": "pending" },
+                        { "id": 2, "title": "Implement Git Diff Extraction", "status": "pending" },
+                        { "id": 3, "title": "Implement Cline Headless Wrapper", "status": "pending" },
+                        { "id": 4, "title": "Implement Interactive Execution", "status": "pending" }
+                    ],
+                    "testStrategy": "Integration tests"
+                },
+                {
+                    "id": 4,
+                    "title": "Implement Gating and GitHub Integration Modules",
+                    "description": "Develop the logic for parsing LLM verdicts and wrapping GitHub CLI operations.",
+                    "details": "Implement src/gating for PASS/FAIL logic. Implement src/github for gh CLI commands.",
+                    "priority": "medium",
+                    "status": "pending",
+                    "subtasks": [
+                        { "id": 1, "title": "Implement Gating Logic", "status": "pending" },
+                        { "id": 2, "title": "Implement GitHub Read Wrappers", "status": "pending" },
+                        { "id": 3, "title": "Implement GitHub Write Wrappers", "status": "pending" }
+                    ],
+                    "testStrategy": "Unit/Integration"
+                },
+                {
+                    "id": 5,
+                    "title": "Develop Pre-commit Risk Review Gate Workflow",
+                    "description": "Create the script and prompt template for the pre-commit hook that blocks risky changes.",
+                    "details": "Orchestrates Git diff -> Cline Headless -> Gating -> Block/Allow.",
+                    "priority": "high",
+                    "status": "pending",
+                    "subtasks": [
+                        { "id": 1, "title": "Create Risk Review Prompt", "status": "pending" },
+                        { "id": 2, "title": "Implement Runner Script", "status": "pending" },
+                        { "id": 3, "title": "Develop Hook Installer", "status": "pending" }
+                    ],
+                    "testStrategy": "E2E tests"
+                },
+                {
+                    "id": 6,
+                    "title": "Develop CI PR Review Gate Workflow",
+                    "description": "Create the workflow for CI pipelines that analyzes PR diffs and fails the build on critical issues.",
+                    "details": "Fetches PR diff via GitHub module -> Analyzes via Cline -> Reports via Report module.",
+                    "priority": "high",
+                    "status": "pending",
+                    "subtasks": [
+                        { "id": 1, "title": "CI Env Detection", "status": "pending" },
+                        { "id": 2, "title": "PR Review Prompt", "status": "pending" },
+                        { "id": 3, "title": "Integrate Headless Runner", "status": "pending" },
+                        { "id": 4, "title": "Verdict Enforcement", "status": "pending" }
+                    ],
+                    "testStrategy": "Integration tests"
+                },
+                {
+                    "id": 7,
+                    "title": "Develop Daily Changelog Generator Workflow",
+                    "description": "Implement the workflow to summarize recent commits into a changelog entry.",
+                    "details": "Uses git log -> Cline summary -> File append.",
+                    "priority": "medium",
+                    "status": "pending",
+                    "subtasks": [
+                        { "id": 1, "title": "Design Changelog Prompt", "status": "pending" },
+                        { "id": 2, "title": "Implement Generation Script", "status": "pending" }
+                    ],
+                    "testStrategy": "Integration tests"
+                },
+                {
+                    "id": 8,
+                    "title": "Develop Lint Sweep and Auto-Fix Workflow",
+                    "description": "Create a workflow that runs linters, identifies errors, and uses Cline to apply fixes.",
+                    "details": "Loop: Lint -> Fail -> Cline Fix -> Lint -> Success.",
+                    "priority": "medium",
+                    "status": "pending",
+                    "subtasks": [
+                        { "id": 1, "title": "Linter Harness", "status": "pending" },
+                        { "id": 2, "title": "Auto-Fix Prompt", "status": "pending" },
+                        { "id": 3, "title": "Patching Logic", "status": "pending" },
+                        { "id": 4, "title": "Retry Loop", "status": "pending" }
+                    ],
+                    "testStrategy": "Integration tests"
+                },
+                {
+                    "id": 9,
+                    "title": "Implement Pack Installation Module",
+                    "description": "Build the install module to bootstrap the workflow pack into target repositories.",
+                    "details": "Copies files from pack/ to .clinerules/workflows and scripts/.",
+                    "priority": "medium",
+                    "status": "pending",
+                    "subtasks": [
+                        { "id": 1, "title": "Implement computePlan", "status": "pending" },
+                        { "id": 2, "title": "Implement installPack", "status": "pending" }
+                    ],
+                    "testStrategy": "Unit/Integration"
+                },
+                {
+                    "id": 10,
+                    "title": "Create CLI Entry Point and End-to-End Validation",
+                    "description": "Expose the pack functionality via a main CLI entry point and validate the full flow.",
+                    "details": "bin/cline-pack entry point wiring up all modules.",
+                    "priority": "medium",
+                    "status": "pending",
+                    "subtasks": [
+                        { "id": 1, "title": "Init CLI Framework", "status": "pending" },
+                        { "id": 2, "title": "Implement Commands", "status": "pending" },
+                        { "id": 3, "title": "E2E Validation", "status": "pending" }
+                    ],
+                    "testStrategy": "Manual/E2E"
+                }
+            ]
+        };
+
+        const moduleInfo = {
+            'pack': { title: "Pack Content", desc: "Contains the versioned workflow files (Markdown prompts) and shell scripts. This is the source of truth that gets installed into user repositories." },
+            'manifest': { title: "Manifest Module", desc: "The registry. Defines metadata for all workflows, including IDs, required inputs, modes (headless/interactive), and prerequisites." },
+            'install': { title: "Install Module", desc: "Bootstrapper. Handles copying files from the internal pack to the target repo's `.clinerules` directory, respecting overwrite policies." },
+            'cline': { title: "Cline Wrapper", desc: "Orchestrator. Wraps the Cline CLI to handle spawning headless tasks, monitoring output, and managing interactive sessions." },
+            'git': { title: "Git Module", desc: "Context Provider. Helper functions to extract staged diffs, range diffs, and commit logs in formats optimized for LLM consumption." },
+            'github': { title: "GitHub Module", desc: "Integration. Wraps the `gh` CLI to fetch PR details, diffs, and submit reviews or comments back to GitHub." },
+            'gating': { title: "Gating Module", desc: "Safety. Parses unstructured LLM responses to find deterministic verdicts (ALLOW/BLOCK, PASS/FAIL) and enforce policies." },
+            'render': { title: "Render Module", desc: "Templating. Interpolates dynamic data (diffs, logs) into the Markdown prompt templates." },
+            'report': { title: "Report Module", desc: "Auditability. Handles writing structured artifacts (JSON/Markdown) to the artifacts directory for every run." },
+            'bin': { title: "CLI Binary", desc: "Entry Point. The `cline-pack` executable that exposes commands like `install`, `list`, and `run`." }
+        };
+
+        // --- CORE INTERACTION ---
+        function switchTab(tabId) {
+            // Hide all contents
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            // Show selected
+            document.getElementById(tabId).classList.add('active');
+
+            // Update buttons
+            document.querySelectorAll('.nav-btn').forEach(el => {
+                if (el.dataset.tab === tabId) {
+                    el.classList.remove('text-slate-500', 'border-transparent');
+                    el.classList.add('text-indigo-600', 'border-indigo-600');
+                } else {
+                    el.classList.add('text-slate-500', 'border-transparent');
+                    el.classList.remove('text-indigo-600', 'border-indigo-600');
+                }
+            });
+
+            // Trigger chart resize if needed
+            if (tabId === 'analytics') {
+                renderCharts();
+            }
+        }
+
+        function showModuleInfo(moduleId) {
+            const info = moduleInfo[moduleId];
+            if (info) {
+                document.getElementById('module-title').innerText = info.title;
+                document.getElementById('module-content').innerHTML = `<p>${info.desc}</p>`;
+
+                // Highlight block
+                document.querySelectorAll('.arch-block').forEach(el => el.classList.remove('active'));
+                event.currentTarget.classList.add('active');
+            }
+        }
+
+        // --- TASK RENDERING ---
+        function renderTasks() {
+            const priorityFilter = document.getElementById('priority-filter').value;
+            const statusFilter = document.getElementById('status-filter').value;
+            const container = document.getElementById('task-list');
+            container.innerHTML = '';
+
+            const filteredTasks = projectData.tasks.filter(t => {
+                if (priorityFilter !== 'all' && t.priority !== priorityFilter) return false;
+                if (statusFilter !== 'all' && t.status !== statusFilter) return false;
+                return true;
+            });
+
+            if (filteredTasks.length === 0) {
+                container.innerHTML = `<div class="p-8 text-center text-slate-400 italic">No tasks match the selected filters.</div>`;
+                return;
+            }
+
+            filteredTasks.forEach(task => {
+                const badgeColor = task.priority === 'high' ? 'bg-rose-100 text-rose-800' : 'bg-blue-100 text-blue-800';
+                const statusColor = task.status === 'pending' ? 'bg-slate-100 text-slate-600' : 'bg-green-100 text-green-800';
+
+                const div = document.createElement('div');
+                div.className = "bg-white rounded-lg border border-slate-200 overflow-hidden";
+                div.innerHTML = `
+                    <div class="p-4 cursor-pointer hover:bg-slate-50 flex items-start justify-between" onclick="toggleTask(${task.id})">
+                        <div class="flex items-start gap-4">
+                            <div class="flex-shrink-0 w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center font-bold text-slate-500 text-sm">${task.id}</div>
+                            <div>
+                                <h3 class="font-semibold text-slate-800">${task.title}</h3>
+                                <p class="text-sm text-slate-500 line-clamp-1">${task.description}</p>
+                            </div>
+                        </div>
+                        <div class="flex gap-2 text-xs font-medium">
+                            <span class="px-2 py-1 rounded ${badgeColor}">${task.priority.toUpperCase()}</span>
+                            <span class="px-2 py-1 rounded ${statusColor}">${task.status.replace('_', ' ').toUpperCase()}</span>
+                        </div>
+                    </div>
+                    <div id="task-detail-${task.id}" class="hidden border-t border-slate-100 bg-slate-50 p-4">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <h4 class="text-xs font-bold text-slate-500 uppercase mb-2">Details</h4>
+                                <p class="text-sm text-slate-700">${task.details}</p>
+                                <div class="mt-4">
+                                    <h4 class="text-xs font-bold text-slate-500 uppercase mb-2">Test Strategy</h4>
+                                    <p class="text-sm text-slate-700 italic">${task.testStrategy}</p>
+                                </div>
+                            </div>
+                            <div>
+                                <h4 class="text-xs font-bold text-slate-500 uppercase mb-2">Subtasks</h4>
+                                <ul class="space-y-2">
+                                    ${task.subtasks.map(st => `
+                                        <li class="flex items-center gap-2 text-sm text-slate-700">
+                                            <span class="w-1.5 h-1.5 rounded-full ${st.status === 'completed' ? 'bg-green-500' : 'bg-slate-300'}"></span>
+                                            ${st.title}
+                                        </li>
+                                    `).join('')}
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        function toggleTask(id) {
+            const el = document.getElementById(`task-detail-${id}`);
+            el.classList.toggle('hidden');
+        }
+
+        // --- CHARTS ---
+        let chartsInitialized = false;
+        function renderCharts() {
+            if (chartsInitialized) return;
+
+            // 1. Status Distribution
+            const statusCounts = { pending: 0, in_progress: 0, completed: 0 };
+            projectData.tasks.forEach(t => statusCounts[t.status]++);
+
+            const ctxStatus = document.getElementById('statusChart').getContext('2d');
+            new Chart(ctxStatus, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Pending', 'In Progress', 'Completed'],
+                    datasets: [{
+                        data: [statusCounts.pending, statusCounts.in_progress, statusCounts.completed],
+                        backgroundColor: ['#cbd5e1', '#3b82f6', '#22c55e']
+                    }]
+                },
+                options: { responsive: true, maintainAspectRatio: false }
+            });
+
+            // 2. Complexity (Subtasks count)
+            const ctxComplexity = document.getElementById('complexityChart').getContext('2d');
+            new Chart(ctxComplexity, {
+                type: 'bar',
+                data: {
+                    labels: projectData.tasks.map(t => `Task ${t.id}`),
+                    datasets: [{
+                        label: 'Subtasks Count',
+                        data: projectData.tasks.map(t => t.subtasks.length),
+                        backgroundColor: '#6366f1',
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } }
+                }
+            });
+
+            // 3. Test Strategy
+            const testStrategies = { Unit: 0, Integration: 0, E2E: 0 };
+            projectData.tasks.forEach(t => {
+                if (t.testStrategy.includes('Unit')) testStrategies.Unit++;
+                if (t.testStrategy.includes('Integration')) testStrategies.Integration++;
+                if (t.testStrategy.includes('E2E')) testStrategies.E2E++;
+            });
+
+            const ctxStrategy = document.getElementById('testStrategyChart').getContext('2d');
+            new Chart(ctxStrategy, {
+                type: 'bar',
+                data: {
+                    labels: ['Unit Tests', 'Integration Tests', 'E2E Tests'],
+                    datasets: [{
+                        label: 'Tasks Covered',
+                        data: [testStrategies.Unit, testStrategies.Integration, testStrategies.E2E],
+                        backgroundColor: ['#f43f5e', '#8b5cf6', '#10b981'],
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    indexAxis: 'y',
+                    scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } }
+                }
+            });
+
+            chartsInitialized = true;
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('total-tasks-count').innerText = projectData.tasks.length;
+            renderTasks();
+
+            // Auto-select 'pack' module info initially
+            showModuleInfo('pack');
+        });
+
+    </script>
+</body>
+</html>
