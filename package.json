@@ -21,11 +21,19 @@
   "homepage": "https://github.com/AcidicSoil/cline-workspace#readme",
   "devDependencies": {
     "@types/node": "^25.0.3",
+    "@typescript-eslint/eslint-plugin": "^8.50.1",
+    "@typescript-eslint/parser": "^8.50.1",
+    "eslint": "^9.39.2",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.4",
+    "prettier": "^3.7.4",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
   },
   "dependencies": {
     "@genkit-ai/google-genai": "^1.27.0",
+    "commander": "^14.0.2",
+    "dotenv": "^17.2.3",
     "genkit": "^1.27.0"
   }
 }
