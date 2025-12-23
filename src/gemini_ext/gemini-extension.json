@@ -1,0 +1,20 @@
+{
+  "publisher": "gemini-flow",
+  "name": "gemini-flow-pack",
+  "version": "0.1.0",
+  "description": "Workflow Pack extension for Gemini CLI",
+  "commands": [
+    {
+      "name": "pack list",
+      "description": "List available workflows",
+      "executable": "dist/gemini_ext/commands.js",
+      "arguments": ["list"]
+    },
+    {
+      "name": "pack run",
+      "description": "Run a workflow",
+      "executable": "dist/gemini_ext/commands.js",
+      "arguments": ["run"]
+    }
+  ]
+}
