@@ -48,3 +48,26 @@ Include a standalone CLI entry point and E2E validation.
 Users can run it directly in terminals/CI
 
 * * *
+
+Pattern D — Ship as an LM Studio TypeScript plugin (best native LM Studio Chat UX)
+---------------------------------------------------------------------------------
+
+1. Create an LM Studio plugin project (TypeScript/JavaScript) with `manifest.json` (`type: "plugin"`, `runner: "node"`, `owner`, `name`, `revision`). Plugins run in LM Studio’s bundled Node.js runtime. :contentReference[oaicite:0]{index=0}
+
+2. Expose your workflows as LM Studio tools via a **Tools Provider**:
+   * Implement a tools provider function that returns an array of tools.
+   * Map each workflow (`pr-review`, `lint-sweep`, etc.) to a tool definition and call shared “core” workflow code (or spawn your CLI) from the tool implementation. :contentReference[oaicite:1]{index=1}
+
+3. Add plugin configuration fields for required runtime paths (ex: `workspaceRoot`, `packsDir`) so the plugin never assumes VS Code-style workspace state. :contentReference[oaicite:2]{index=2}
+
+4. Develop locally with `lms dev` (auto rebuild + reload; plugin appears in LM Studio’s plugin list). :contentReference[oaicite:3]{index=3}
+
+5. Publish to LM Studio Hub with `lms push` (or keep private with `--private` where supported). :contentReference[oaicite:4]{index=4}
+
+6. Ensure `package.json` + `package-lock.json` declare all dependencies; LM Studio installs them automatically for users on plugin install. :contentReference[oaicite:5]{index=5}
+
+User experience becomes:
+
+* install the plugin (Hub) or run `lms dev` during development
+* open LM Studio Chat; tools are available immediately (no `mcp.json` required for plugin tools)
+* natural-language requests invoke your workflow tools via the Tools Provider :contentReference[oaicite:6]{index=6}
