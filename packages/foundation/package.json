@@ -1,0 +1,13 @@
+{
+  "name": "@workflow-pack/foundation",
+  "version": "0.1.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "test": "jest",
+    "build": "tsc"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}
