@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cline Workflow Pack | Product Architecture & Capabilities</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; color: #334155; }
+
+        /* Chart Container Styling (Mandatory) */
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 300px;
+            max-height: 400px;
+        }
+        @media (min-width: 768px) {
+            .chart-container { height: 350px; }
+        }
+
+        /* Interactive Element Styling */
+        .interactive-card { transition: all 0.2s ease; cursor: pointer; border: 1px solid #e2e8f0; }
+        .interactive-card:hover { transform: translateY(-3px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); border-color: #6366f1; }
+        .interactive-card.active { border-color: #4f46e5; background-color: #eef2ff; ring: 2px solid #4f46e5; }
+
+        /* Module Block Styling for Architecture Map */
+        .module-block {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            padding: 1rem; border-radius: 0.5rem; border: 1px solid #cbd5e1;
+            background: white; transition: all 0.2s; cursor: pointer;
+            min-height: 80px;
+        }
+        .module-block:hover { border-color: #6366f1; background-color: #f8fafc; }
+        .module-block.active { border-color: #4f46e5; background-color: #e0e7ff; color: #312e81; font-weight: 600; }
+
+        .arrow-down { width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-top: 6px solid #94a3b8; margin: 0.5rem auto; }
+
+        /* Utility */
+        .hidden-content { display: none; }
+        .fade-in { animation: fadeIn 0.4s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+    <!-- Chosen Palette: Indigo/Slate (Professional, Technical, Clean) -->
+    <!-- Application Structure Plan:
+         1. Hero Section: High-level value prop and Problem vs. Solution toggle.
+         2. Impact Metrics: Visualization of the Success Metrics from the PRD (Goal: Inform).
+         3. System Architecture: Interactive block diagram of the Pack/Src structure (Goal: Relationships/Organize).
+         4. Capability Catalog: Filterable cards for the defined workflows (PR Review, Changelog, etc.) (Goal: Organize).
+         5. Logic Simulator: Interactive demo of the 'Gating' logic described in the PRD (Goal: Change/Demonstrate).
+    -->
+    <!-- Visualization & Content Choices:
+         - Impact: Bar chart comparing 'Current State' vs 'Target State' metrics.
+         - Architecture: CSS Grid layout representing the directory structure provided in PRD Section 3.
+         - Capabilities: Interactive cards filtering by 'Dev Productivity', 'Safety', 'Maintenance'.
+         - Gating: A functional input/output simulator to teach how the parser works.
+    -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+</head>
+<body class="flex flex-col min-h-screen">
+
+    <!-- Navbar -->
+    <nav class="bg-white border-b border-slate-200 sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16 items-center">
+                <div class="flex items-center gap-2">
+                    <div class="bg-indigo-600 text-white font-bold rounded p-1 text-sm">CWP</div>
+                    <span class="font-bold text-slate-800 text-lg">Cline Workflow Pack</span>
+                </div>
+                <div class="flex space-x-6 text-sm font-medium">
+                    <a href="#vision" class="text-slate-500 hover:text-indigo-600">Vision</a>
+                    <a href="#metrics" class="text-slate-500 hover:text-indigo-600">Impact</a>
+                    <a href="#architecture" class="text-slate-500 hover:text-indigo-600">Architecture</a>
+                    <a href="#capabilities" class="text-slate-500 hover:text-indigo-600">Capabilities</a>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="flex-grow">
+
+        <!-- SECTION 1: HERO & PROBLEM/SOLUTION -->
+        <section id="vision" class="py-12 bg-white">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="text-center mb-12">
+                    <h1 class="text-4xl font-extrabold text-slate-900 tracking-tight sm:text-5xl mb-4">
+                        Standardizing Engineering Automation
+                    </h1>
+                    <p class="text-lg text-slate-600 max-w-2xl mx-auto">
+                        A unified runner library and workflow pack for the Cline CLI, designed to replace brittle, scattered scripts with repeatable, safe, and headless AI automations.
+                    </p>
+                </div>
+
+                <!-- Problem/Solution Toggle -->
+                <div class="bg-slate-50 rounded-2xl p-2 max-w-4xl mx-auto border border-slate-200">
+                    <div class="grid grid-cols-2 gap-2 mb-6">
+                        <button onclick="toggleVision('problem')" id="btn-problem" class="py-3 px-6 rounded-xl font-medium text-sm transition-colors bg-white shadow-sm text-indigo-600 border border-slate-200">
+                            The Friction (Current State)
+                        </button>
+                        <button onclick="toggleVision('solution')" id="btn-solution" class="py-3 px-6 rounded-xl font-medium text-sm transition-colors text-slate-500 hover:text-slate-700">
+                            The Solution (Target State)
+                        </button>
+                    </div>
+
+                    <div id="vision-content" class="bg-white rounded-xl p-8 border border-slate-100 min-h-[200px] flex items-center justify-center fade-in">
+                        <!-- Content injected via JS -->
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 2: IMPACT METRICS -->
+        <section id="metrics" class="py-12 bg-slate-50 border-y border-slate-200">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="mb-8">
+                    <h2 class="text-2xl font-bold text-slate-900">Target Success Metrics</h2>
+                    <p class="text-slate-600">Quantifiable goals for the MVP release based on PRD definitions.</p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
+                    <div class="space-y-6">
+                        <div class="bg-white p-5 rounded-lg border border-slate-200 shadow-sm">
+                            <h3 class="text-sm font-semibold text-slate-500 uppercase">Automation Reliability</h3>
+                            <div class="flex items-end gap-2 mt-1">
+                                <span class="text-4xl font-bold text-indigo-600">≥80%</span>
+                                <span class="text-sm text-slate-500 mb-1">headless completion</span>
+                            </div>
+                            <p class="text-xs text-slate-400 mt-2">Goal: Runs complete without manual intervention.</p>
+                        </div>
+                        <div class="bg-white p-5 rounded-lg border border-slate-200 shadow-sm">
+                            <h3 class="text-sm font-semibold text-slate-500 uppercase">Feedback Velocity</h3>
+                            <div class="flex items-end gap-2 mt-1">
+                                <span class="text-4xl font-bold text-emerald-600">≥50%</span>
+                                <span class="text-sm text-slate-500 mb-1">faster feedback</span>
+                            </div>
+                            <p class="text-xs text-slate-400 mt-2">Goal: Reduction in time-to-actionable PR/test feedback.</p>
+                        </div>
+                        <div class="bg-white p-5 rounded-lg border border-slate-200 shadow-sm">
+                            <h3 class="text-sm font-semibold text-slate-500 uppercase">Safety Accuracy</h3>
+                            <div class="flex items-end gap-2 mt-1">
+                                <span class="text-4xl font-bold text-rose-600">≤5%</span>
+                                <span class="text-sm text-slate-500 mb-1">false block rate</span>
+                            </div>
+                            <p class="text-xs text-slate-400 mt-2">Goal: Minimal disruption from pre-commit/CI gates.</p>
+                        </div>
+                    </div>
+
+                    <!-- Visualization -->
+                    <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                        <h3 class="text-lg font-bold text-slate-800 mb-4 text-center">Projected Efficiency Gains</h3>
+                        <div class="chart-container">
+                            <canvas id="impactChart"></canvas>
+                        </div>
+                        <p class="text-center text-xs text-slate-400 mt-4">Comparing baseline manual effort vs. automated targets.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 3: SYSTEM ARCHITECTURE -->
+        <section id="architecture" class="py-12 bg-white">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="mb-10">
+                    <h2 class="text-2xl font-bold text-slate-900">Technical Architecture</h2>
+                    <p class="text-slate-600">Explore the modular design of the runner library and pack content. Click components to view responsibilities.</p>
+                </div>
+
+                <div class="flex flex-col lg:flex-row gap-8">
+                    <!-- Diagram -->
+                    <div class="lg:w-2/3 bg-slate-50 p-6 rounded-2xl border border-slate-200 select-none">
+
+                        <!-- Layer: Pack Content -->
+                        <div class="mb-4">
+                            <h4 class="text-xs font-bold text-slate-400 uppercase mb-2 text-center tracking-widest">Workflow Content Layer</h4>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div onclick="showArchInfo('workflows')" class="module-block border-l-4 border-l-amber-400">
+                                    <span class="font-bold text-slate-700">pack/workflows</span>
+                                    <span class="text-xs text-slate-500">Markdown Prompts</span>
+                                </div>
+                                <div onclick="showArchInfo('scripts')" class="module-block border-l-4 border-l-amber-400">
+                                    <span class="font-bold text-slate-700">pack/scripts</span>
+                                    <span class="text-xs text-slate-500">Shell Helpers</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="arrow-down"></div>
+
+                        <!-- Layer: Core Library -->
+                        <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm mb-4">
+                            <h4 class="text-xs font-bold text-slate-400 uppercase mb-4 text-center tracking-widest">Runner Library (src/)</h4>
+
+                            <!-- Integration Modules -->
+                            <div class="grid grid-cols-3 gap-2 mb-2">
+                                <div onclick="showArchInfo('git')" class="module-block bg-slate-50">
+                                    <span class="font-semibold text-slate-700 text-sm">git</span>
+                                </div>
+                                <div onclick="showArchInfo('github')" class="module-block bg-slate-50">
+                                    <span class="font-semibold text-slate-700 text-sm">github</span>
+                                </div>
+                                <div onclick="showArchInfo('manifest')" class="module-block bg-slate-50">
+                                    <span class="font-semibold text-slate-700 text-sm">manifest</span>
+                                </div>
+                            </div>
+
+                            <!-- Core Orchestration -->
+                            <div class="grid grid-cols-1 mb-2">
+                                <div onclick="showArchInfo('cline')" class="module-block bg-indigo-50 border-indigo-200">
+                                    <span class="font-bold text-indigo-700">cline</span>
+                                    <span class="text-xs text-indigo-500">Orchestration & Task Mgmt</span>
+                                </div>
+                            </div>
+
+                            <!-- Utilities -->
+                            <div class="grid grid-cols-3 gap-2">
+                                <div onclick="showArchInfo('gating')" class="module-block bg-rose-50 border-rose-100">
+                                    <span class="font-semibold text-rose-700 text-sm">gating</span>
+                                </div>
+                                <div onclick="showArchInfo('render')" class="module-block bg-slate-50">
+                                    <span class="font-semibold text-slate-700 text-sm">render</span>
+                                </div>
+                                <div onclick="showArchInfo('report')" class="module-block bg-slate-50">
+                                    <span class="font-semibold text-slate-700 text-sm">report</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="arrow-down"></div>
+
+                        <!-- Layer: Entry Point -->
+                        <div class="grid grid-cols-1">
+                            <div onclick="showArchInfo('bin')" class="module-block bg-slate-800 text-white hover:bg-slate-700 hover:text-white border-slate-700">
+                                <span class="font-bold">bin/cline-pack</span>
+                                <span class="text-xs text-slate-400">CLI Entry Point</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Details Panel -->
+                    <div class="lg:w-1/3">
+                        <div class="bg-white p-6 rounded-2xl border border-slate-200 h-full sticky top-24 shadow-sm">
+                            <div id="arch-detail-placeholder" class="text-center py-12">
+                                <span class="text-4xl mb-4 block">👆</span>
+                                <h3 class="text-lg font-medium text-slate-900">Interactive Diagram</h3>
+                                <p class="text-slate-500 mt-2 text-sm">Click on any module in the diagram to view its specific responsibilities and inputs/outputs.</p>
+                            </div>
+                            <div id="arch-detail-content" class="hidden-content fade-in">
+                                <div class="flex items-center gap-2 mb-4">
+                                    <span id="detail-icon" class="text-2xl">📦</span>
+                                    <h3 id="detail-title" class="text-xl font-bold text-slate-900">Module Name</h3>
+                                </div>
+                                <p id="detail-desc" class="text-slate-600 text-sm mb-6 leading-relaxed">Description goes here.</p>
+
+                                <h4 class="text-xs font-bold text-slate-400 uppercase mb-3">Key Exports</h4>
+                                <ul id="detail-exports" class="space-y-2">
+                                    <!-- Exports list -->
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 4: CAPABILITIES CATALOG -->
+        <section id="capabilities" class="py-12 bg-slate-50 border-t border-slate-200">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-center">
+                    <div>
+                        <h2 class="text-2xl font-bold text-slate-900">Capabilities & Workflows</h2>
+                        <p class="text-slate-600">Included automation patterns available in the MVP.</p>
+                    </div>
+
+                    <!-- Filters -->
+                    <div class="mt-4 md:mt-0 bg-white p-1 rounded-lg border border-slate-200 inline-flex">
+                        <button onclick="filterCaps('all')" class="cap-filter active px-4 py-2 rounded-md text-sm font-medium transition-colors text-indigo-700 bg-indigo-50" data-filter="all">All</button>
+                        <button onclick="filterCaps('safety')" class="cap-filter px-4 py-2 rounded-md text-sm font-medium transition-colors text-slate-600 hover:bg-slate-50" data-filter="safety">Safety Gates</button>
+                        <button onclick="filterCaps('productivity')" class="cap-filter px-4 py-2 rounded-md text-sm font-medium transition-colors text-slate-600 hover:bg-slate-50" data-filter="productivity">Productivity</button>
+                        <button onclick="filterCaps('core')" class="cap-filter px-4 py-2 rounded-md text-sm font-medium transition-colors text-slate-600 hover:bg-slate-50" data-filter="core">Core</button>
+                    </div>
+                </div>
+
+                <div id="caps-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <!-- Cards injected via JS -->
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 5: LOGIC SIMULATOR -->
+        <section class="py-12 bg-white border-t border-slate-200">
+            <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+                <h2 class="text-2xl font-bold text-slate-900 mb-2">How 'Gating' Works</h2>
+                <p class="text-slate-600 mb-8">
+                    The <code>src/gating</code> module is critical for safe automation. It parses noisy LLM responses into strict Boolean verdicts. Try it below.
+                </p>
+
+                <div class="bg-slate-900 rounded-xl p-6 shadow-xl text-left font-mono text-sm">
+                    <div class="flex flex-col md:flex-row gap-6">
+                        <!-- Input -->
+                        <div class="flex-1">
+                            <label class="block text-slate-400 mb-2 text-xs uppercase tracking-wider">Simulated LLM Output</label>
+                            <textarea id="sim-input" class="w-full h-32 bg-slate-800 text-slate-200 p-3 rounded border border-slate-700 focus:outline-none focus:border-indigo-500 resize-none" placeholder="Paste mock LLM text here...">I have reviewed the changes.
+Based on the security policy...
+VERDICT: PASS
+Reason: No credentials found.</textarea>
+                            <div class="mt-2 flex gap-2">
+                                <button onclick="setSim('pass')" class="px-3 py-1 bg-slate-700 hover:bg-slate-600 text-white rounded text-xs">Load 'PASS'</button>
+                                <button onclick="setSim('fail')" class="px-3 py-1 bg-slate-700 hover:bg-slate-600 text-white rounded text-xs">Load 'FAIL'</button>
+                                <button onclick="setSim('noise')" class="px-3 py-1 bg-slate-700 hover:bg-slate-600 text-white rounded text-xs">Load 'Noisy'</button>
+                            </div>
+                        </div>
+
+                        <!-- Process Arrow -->
+                        <div class="flex items-center justify-center text-slate-500">
+                            <span class="text-2xl">➔</span>
+                        </div>
+
+                        <!-- Output -->
+                        <div class="flex-1">
+                            <label class="block text-slate-400 mb-2 text-xs uppercase tracking-wider">Parsed Verdict</label>
+                            <div id="sim-output" class="w-full h-32 bg-black text-green-400 p-4 rounded border border-slate-700 flex flex-col justify-center">
+                                <span class="opacity-50">// Waiting for input...</span>
+                            </div>
+                            <button onclick="runSim()" class="mt-2 w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-medium transition-colors">Parse Verdict</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <footer class="bg-slate-50 border-t border-slate-200 py-10">
+        <div class="max-w-7xl mx-auto px-4 text-center">
+            <p class="text-slate-500 text-sm">Generated interactive documentation for the Cline Workflow Pack.</p>
+            <p class="text-slate-400 text-xs mt-2">Based on Product Requirements Document.</p>
+        </div>
+    </footer>
+
+    <script>
+        // --- CONTENT DATA ---
+
+        const visionData = {
+            problem: {
+                title: "The Friction (Current State)",
+                items: [
+                    "🛑 <strong>Scattershot Automation:</strong> Scripts are copied/pasted across repos, leading to drift.",
+                    "⚠️ <strong>Uneven Safety:</strong> Some repos check for secrets, others don't.",
+                    "🐢 <strong>Manual Gates:</strong> PRs wait hours for human review on trivial changes.",
+                    "🧩 <strong>No Standard API:</strong> Inputs and outputs vary, making composition impossible."
+                ]
+            },
+            solution: {
+                title: "The Solution (Target State)",
+                items: [
+                    "📦 <strong>Standard Pack:</strong> One install command for a suite of workflows.",
+                    "🤖 <strong>Headless Runners:</strong> AI tasks run in CI without human hand-holding.",
+                    "🛡️ <strong>Deterministic Gating:</strong> 'ALLOW/BLOCK' logic ensures compliance.",
+                    "📝 <strong>Audit Artifacts:</strong> Every run produces a standard JSON/MD report."
+                ]
+            }
+        };
+
+        const architectureData = {
+            'workflows': {
+                icon: '📄',
+                title: 'pack/workflows',
+                desc: 'The brain of the system. Contains versioned Markdown files that serve as System Prompts for the AI. These define the persona (e.g., "Senior Reviewer"), the rules, and the expected output format.',
+                exports: ['pre-commit-review.md', 'changelog.md', 'ci-pr-review.md']
+            },
+            'scripts': {
+                icon: '🐚',
+                title: 'pack/scripts',
+                desc: 'Thin shell or TypeScript wrappers that bridge the gap between the host environment (CI, Local Hook) and the Cline CLI. They setup the environment and call the runner.',
+                exports: ['pre-commit.ts', 'generate-changelog.ts']
+            },
+            'git': {
+                icon: '🌳',
+                title: 'src/git',
+                desc: 'Provides clean data for context. Extracts staged diffs, range diffs, and commit logs. Crucial for filtering out noise so the AI only sees relevant changes.',
+                exports: ['getStagedDiff()', 'getRangeDiff(base, head)', 'getCommitLog()']
+            },
+            'github': {
+                icon: '🐙',
+                title: 'src/github',
+                desc: 'Wraps the `gh` CLI. Handles fetching PR metadata (title, body) and submitting reviews or comments back to the repository.',
+                exports: ['viewPr(id)', 'diffPr(id)', 'submitReview(id, body)']
+            },
+            'manifest': {
+                icon: '📋',
+                title: 'src/manifest',
+                desc: 'The registry of capabilities. Defines which workflows are available, their prerequisites (e.g., requires `gh`), and their supported execution modes.',
+                exports: ['loadManifest()', 'listWorkflows()', 'getWorkflow(id)']
+            },
+            'cline': {
+                icon: '⚡',
+                title: 'src/cline',
+                desc: 'The execution engine. Wraps `cline` to spawn headless tasks (`cline task new`) or interactive sessions. Handles process monitoring and output capture.',
+                exports: ['runHeadless(prompt)', 'runInteractive()', 'followTask(id)']
+            },
+            'gating': {
+                icon: '🛡️',
+                title: 'src/gating',
+                desc: 'The safety valve. Analyzes the raw text output from the AI to find a structured Verdict. Enforces failure policies (e.g., "Block on High Risk").',
+                exports: ['parseVerdict(text)', 'shouldFail(verdict)']
+            },
+            'render': {
+                icon: '🎨',
+                title: 'src/render',
+                desc: 'The template engine. Injects dynamic data (diffs, logs, user input) into the static Markdown prompts before execution.',
+                exports: ['renderPrompt(template, data)']
+            },
+            'report': {
+                icon: '📊',
+                title: 'src/report',
+                desc: 'The auditor. Writes standardized artifacts (logs, decision records) to disk so humans can verify why an automation took a specific action.',
+                exports: ['writeArtifact(path, content)', 'formatSummary()']
+            },
+            'bin': {
+                icon: '🚀',
+                title: 'bin/cline-pack',
+                desc: 'The user interface. A CLI tool to install the pack into a repo, list available workflows, or run a specific workflow manually.',
+                exports: ['cline-pack install', 'cline-pack run <id>']
+            }
+        };
+
+        const capabilities = [
+            { id: 'pr-review', type: 'productivity', title: 'PR Review Automation', desc: 'Fetches PR diffs, analyzes them against guidelines, and drafts a review via GitHub CLI.', icon: '👀' },
+            { id: 'pre-commit', type: 'safety', title: 'Pre-commit Risk Gate', desc: 'Analyzes staged changes for security risks (secrets, massive deletes) before commit.', icon: '🛡️' },
+            { id: 'changelog', type: 'productivity', title: 'Daily Changelog', desc: 'Summarizes git commits from the last 24h into a formatted Markdown log entry.', icon: '📅' },
+            { id: 'ci-gate', type: 'safety', title: 'CI PR Review Gate', desc: 'Runs in CI pipeline. Fails the build if the AI detects critical issues in the diff.', icon: '🚦' },
+            { id: 'lint-fix', type: 'productivity', title: 'Lint Sweep & Fix', desc: 'Runs linters, captures errors, and spawns AI tasks to apply auto-fixes.', icon: '🧹' },
+            { id: 'install', type: 'core', title: 'Pack Installation', desc: 'Bootstraps the `.clinerules` directory and hook scripts into a target repo.', icon: '📦' }
+        ];
+
+        // --- INTERACTION LOGIC ---
+
+        function toggleVision(mode) {
+            const container = document.getElementById('vision-content');
+            const btnP = document.getElementById('btn-problem');
+            const btnS = document.getElementById('btn-solution');
+
+            const data = visionData[mode];
+
+            if(mode === 'problem') {
+                btnP.className = "py-3 px-6 rounded-xl font-medium text-sm transition-colors bg-white shadow-sm text-indigo-600 border border-slate-200";
+                btnS.className = "py-3 px-6 rounded-xl font-medium text-sm transition-colors text-slate-500 hover:text-slate-700";
+            } else {
+                btnS.className = "py-3 px-6 rounded-xl font-medium text-sm transition-colors bg-white shadow-sm text-indigo-600 border border-slate-200";
+                btnP.className = "py-3 px-6 rounded-xl font-medium text-sm transition-colors text-slate-500 hover:text-slate-700";
+            }
+
+            container.innerHTML = `
+                <div class="space-y-4 fade-in">
+                    <h3 class="text-xl font-bold text-slate-900">${data.title}</h3>
+                    <ul class="space-y-3">
+                        ${data.items.map(item => `<li class="flex items-start gap-3 text-slate-600 text-sm"><span class="mt-1 block w-1.5 h-1.5 rounded-full bg-indigo-500 flex-shrink-0"></span><span>${item}</span></li>`).join('')}
+                    </ul>
+                </div>
+            `;
+        }
+
+        function showArchInfo(moduleId) {
+            const data = architectureData[moduleId];
+            if(!data) return;
+
+            document.getElementById('arch-detail-placeholder').classList.add('hidden-content');
+            const content = document.getElementById('arch-detail-content');
+            content.classList.remove('hidden-content');
+
+            // Re-trigger animation
+            content.classList.remove('fade-in');
+            void content.offsetWidth;
+            content.classList.add('fade-in');
+
+            document.getElementById('detail-icon').innerText = data.icon;
+            document.getElementById('detail-title').innerText = data.title;
+            document.getElementById('detail-desc').innerText = data.desc;
+
+            const exportsList = document.getElementById('detail-exports');
+            exportsList.innerHTML = data.exports.map(exp => `
+                <li class="flex items-center gap-2 text-xs font-mono text-slate-600 bg-slate-100 p-2 rounded border border-slate-200">
+                    <span class="text-indigo-500">export</span> ${exp}
+                </li>
+            `).join('');
+
+            // Highlight active block
+            document.querySelectorAll('.module-block').forEach(el => el.classList.remove('active'));
+            event.currentTarget.classList.add('active');
+        }
+
+        function renderCapabilities(filter = 'all') {
+            const grid = document.getElementById('caps-grid');
+            grid.innerHTML = '';
+
+            capabilities.forEach(cap => {
+                if(filter !== 'all' && cap.type !== filter) return;
+
+                const card = document.createElement('div');
+                card.className = "bg-white p-6 rounded-xl border border-slate-200 interactive-card flex flex-col gap-3";
+
+                let badgeClass = 'bg-slate-100 text-slate-600';
+                if(cap.type === 'safety') badgeClass = 'bg-rose-50 text-rose-700 border border-rose-100';
+                if(cap.type === 'productivity') badgeClass = 'bg-emerald-50 text-emerald-700 border border-emerald-100';
+
+                card.innerHTML = `
+                    <div class="flex justify-between items-start">
+                        <span class="text-3xl">${cap.icon}</span>
+                        <span class="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded ${badgeClass}">${cap.type}</span>
+                    </div>
+                    <h3 class="font-bold text-slate-900">${cap.title}</h3>
+                    <p class="text-sm text-slate-600 leading-relaxed">${cap.desc}</p>
+                    <div class="mt-auto pt-4 flex items-center text-xs font-medium text-indigo-600">
+                        View definition ➔
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        function filterCaps(type) {
+            renderCapabilities(type);
+            document.querySelectorAll('.cap-filter').forEach(el => {
+                if(el.dataset.filter === type) {
+                    el.classList.add('bg-indigo-50', 'text-indigo-700');
+                    el.classList.remove('text-slate-600', 'hover:bg-slate-50');
+                } else {
+                    el.classList.remove('bg-indigo-50', 'text-indigo-700');
+                    el.classList.add('text-slate-600', 'hover:bg-slate-50');
+                }
+            });
+        }
+
+        // --- SIMULATOR LOGIC ---
+        function setSim(type) {
+            const input = document.getElementById('sim-input');
+            if(type === 'pass') {
+                input.value = `Analysis complete.\nNo security issues detected in the diff.\n\nVERDICT: PASS\nSeverity: Low`;
+            } else if(type === 'fail') {
+                input.value = `CRITICAL ISSUE FOUND.\nThe user committed an AWS key in src/config.ts.\n\nVERDICT: FAIL\nReason: Credential exposure.`;
+            } else {
+                input.value = `I think this looks okay. It's mostly just style changes. I don't see any huge problems, so it should be fine to merge.`;
+            }
+            document.getElementById('sim-output').innerHTML = `<span class="opacity-50">// Ready to parse...</span>`;
+        }
+
+        function runSim() {
+            const text = document.getElementById('sim-input').value.toUpperCase();
+            const output = document.getElementById('sim-output');
+
+            output.innerHTML = `<span class="text-yellow-400 animate-pulse">Parsing...</span>`;
+
+            setTimeout(() => {
+                let verdict = "UNKNOWN";
+                let color = "text-yellow-400";
+
+                if (text.includes("FAIL") || text.includes("BLOCK")) {
+                    verdict = "FAIL (BLOCK)";
+                    color = "text-rose-500";
+                } else if (text.includes("PASS") || text.includes("ALLOW")) {
+                    verdict = "PASS (ALLOW)";
+                    color = "text-emerald-400";
+                } else {
+                    verdict = "FAIL (MALFORMED)";
+                    color = "text-rose-500";
+                }
+
+                output.innerHTML = `
+                    <div class="font-bold text-white mb-1">Result:</div>
+                    <div class="text-xl ${color} font-bold">${verdict}</div>
+                    <div class="text-xs text-slate-400 mt-2 font-mono">
+                        {
+                          "decision": "${verdict.split(' ')[0]}",
+                          "timestamp": "${new Date().toISOString()}"
+                        }
+                    </div>
+                `;
+            }, 600);
+        }
+
+        // --- CHARTS ---
+        function initCharts() {
+            const ctx = document.getElementById('impactChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['Review Wait Time (hrs)', 'False Positives (%)', 'Manual Steps'],
+                    datasets: [
+                        {
+                            label: 'Current Baseline',
+                            data: [24, 15, 5],
+                            backgroundColor: '#cbd5e1',
+                            borderRadius: 4
+                        },
+                        {
+                            label: 'Projected Target',
+                            data: [12, 5, 1], // 50% reduction, 5% false pos, 1 step
+                            backgroundColor: '#4f46e5',
+                            borderRadius: 4
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'bottom' },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) label += ': ';
+                                    if (context.parsed.y !== null) label += context.parsed.y;
+                                    return label;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: { beginAtZero: true }
+                    }
+                }
+            });
+        }
+
+        // Init
+        document.addEventListener('DOMContentLoaded', () => {
+            toggleVision('problem');
+            renderCapabilities();
+            initCharts();
+            // Show default arch info
+            showArchInfo('workflows');
+        });
+
+    </script>
+</body>
+</html>
