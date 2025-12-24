@@ -1,70 +1,4 @@
 <source_code>
-src/index.ts
-```
-import 'dotenv/config'; // Load environment variables
-import { genkit, z } from 'genkit';
-import { googleAI } from '@genkit-ai/google-genai';
-
-console.log('GEMINI_API_KEY present:', !!process.env.GEMINI_API_KEY);
-
-export const ai = genkit({
-  plugins: [googleAI()],
-  model: googleAI.model('gemini-2.5-flash'),
-});
-
-export const helloFlow = ai.defineFlow(
-  {
-    name: 'helloFlow',
-    inputSchema: z.string().describe('Your name'),
-    outputSchema: z.string().describe('A greeting'),
-  },
-  async (name) => {
-    try {
-      console.log('Running helloFlow for:', name);
-      const response = await ai.generate(`Hello, ${name}! Say something nice back.`);
-      console.log('Response generated');
-      return response.text;
-    } catch (e) {
-      console.error('Error in helloFlow:', e);
-      throw e;
-    }
-  }
-);
-
-// Define the schema for a task
-const TaskSchema = z.object({
-  title: z.string().describe('The title of the task'),
-  description: z.string().describe('A brief description of what needs to be done'),
-  priority: z.enum(['high', 'medium', 'low']).describe('The priority level of the task'),
-});
-
-// Create a flow that generates tasks based on a goal
-export const taskGeneratorFlow = ai.defineFlow(
-  {
-    name: 'taskGeneratorFlow',
-    inputSchema: z.string().describe('The goal or project to break down into tasks'),
-    outputSchema: z.array(TaskSchema).describe('A list of actionable tasks'),
-  },
-  async (goal) => {
-    try {
-        const { output } = await ai.generate({
-        prompt: `Break down the following goal into a list of concise, actionable tasks: "${goal}"`,
-        output: { schema: z.array(TaskSchema) },
-        });
-
-        if (!output) {
-        throw new Error('Failed to generate tasks');
-        }
-
-        return output;
-    } catch (e) {
-        console.error('Error in taskGeneratorFlow:', e);
-        throw e;
-    }
-  }
-);
-```
-
 src/cline/index.ts
 ```
 import { spawn } from 'child_process';
@@ -1374,6 +1308,461 @@ export async function renderTemplate(src: string, dest: string, context: Record<
 
   await fs.writeFile(dest, content);
 }
+```
+
+pack/scripts/ci-review.ts
+```
+import { execGit } from '../../src/git';
+import { runHeadless } from '../../src/cline';
+import { parseVerdict, shouldFail } from '../../src/gating';
+import { writeArtifact } from '../../src/report';
+import fs from 'fs/promises';
+import path from 'path';
+
+async function main() {
+  try {
+    // 6.1 Environment Detection
+    const isGitHubActions = !!process.env.GITHUB_ACTIONS;
+    const baseRef = process.env.GITHUB_BASE_REF || 'main';
+    const headRef = process.env.GITHUB_HEAD_REF || 'HEAD';
+
+    console.log(`🌍 Environment: ${isGitHubActions ? 'GitHub Actions' : 'Generic CI'}`);
+    console.log(`🌿 Comparing ${baseRef}..${headRef}`);
+
+    // Hydrate history if needed (common in shallow clones)
+    if (isGitHubActions) {
+      console.log('💧 Hydrating git history...');
+      await execGit(`fetch --depth=100 origin ${baseRef}`);
+    }
+
+    // 6.2 Diff Extraction
+    const diff = await execGit(`diff origin/${baseRef}..${headRef}`);
+    if (!diff) {
+      console.log('⚪ No changes to review.');
+      process.exit(0);
+    }
+
+    // Load Prompt
+    const templatePath = path.join(__dirname, '../workflows/ci-pr-review.md');
+    const template = await fs.readFile(templatePath, 'utf-8');
+    const prompt = template.replace('{{diff}}', diff);
+
+    // 6.3 Headless Analysis
+    console.log('🤖 Running AI PR analysis...');
+    const result = await runHeadless(prompt, { timeout: 120000 });
+
+    // 6.4 Verdict Enforcement
+    const verdict = parseVerdict(result.stdout);
+    const failed = shouldFail(verdict);
+
+    const artifactPath = await writeArtifact(`ci-review/${Date.now()}.md`, result.stdout);
+    
+    if (failed) {
+      if (isGitHubActions) {
+        console.log(`::error title=PR Review Failed::${verdict} verdict from AI review.`);
+      }
+      console.error('❌ CI Gate: FAIL');
+      console.error(`Full report: ${artifactPath}`);
+      process.exit(1);
+    } else {
+      console.log('✅ CI Gate: PASS');
+      process.exit(0);
+    }
+  } catch (error: any) {
+    console.error('💥 Error in CI review:', error.message);
+    process.exit(1);
+  }
+}
+
+main();
+```
+
+pack/scripts/generate-changelog.ts
+```
+import { getCommitLog } from '../../src/git';
+import { runHeadless } from '../../src/cline';
+import fs from 'fs/promises';
+import path from 'path';
+
+async function main() {
+  try {
+    const count = parseInt(process.argv[2] || '20');
+    console.log(`📜 Fetching last ${count} commits...`);
+    const commits = await getCommitLog(count);
+
+    if (!commits) {
+      console.log('⚪ No commits found to summarize.');
+      process.exit(0);
+    }
+
+    // Load template
+    const templatePath = path.join(__dirname, '../workflows/changelog.md');
+    const template = await fs.readFile(templatePath, 'utf-8');
+    const prompt = template.replace('{{commits}}', commits);
+
+    console.log('✍️ Generating changelog summary...');
+    const result = await runHeadless(prompt, { timeout: 90000 });
+
+    const changelogPath = path.join(process.cwd(), 'CHANGELOG.md');
+    const date = new Date().toLocaleDateString();
+    const entry = `
+## [${date}]
+
+${result.stdout}
+`;
+
+    // Append to CHANGELOG.md or create if not exists
+    let existingContent = '';
+    try {
+      existingContent = await fs.readFile(changelogPath, 'utf-8');
+    } catch {
+      existingContent = '# Changelog\n';
+    }
+
+    await fs.writeFile(changelogPath, existingContent + entry, 'utf-8');
+    
+    console.log(`✅ Changelog updated: ${changelogPath}`);
+  } catch (error: any) {
+    console.error('💥 Error generating changelog:', error.message);
+    process.exit(1);
+  }
+}
+
+main();
+```
+
+pack/scripts/lint-sweep.ts
+```
+import { exec } from 'child_process';
+import util from 'util';
+import fs from 'fs/promises';
+import path from 'path';
+import { runHeadless } from '../../src/cline';
+
+const execAsync = util.promisify(exec);
+
+// 8.1 Linter Execution Harness
+async function runLint(command: string): Promise<{ success: boolean; output: string }> {
+  try {
+    const { stdout, stderr } = await execAsync(command);
+    return { success: true, output: stdout + stderr };
+  } catch (error: any) {
+    return { success: false, output: error.stdout + error.stderr };
+  }
+}
+
+// 8.3 AI Response Parsing and Patching Logic
+function applyPatches(fileContent: string, aiOutput: string): string {
+  const blocks = aiOutput.split('<<<<SEARCH');
+  let newContent = fileContent;
+
+  for (let i = 1; i < blocks.length; i++) {
+    const block = blocks[i];
+    const parts = block.split('====');
+    if (parts.length < 2) continue;
+
+    const search = parts[0].trim();
+    const replaceParts = parts[1].split('>>>>REPLACE');
+    if (replaceParts.length < 1) continue;
+
+    const replace = replaceParts[0].trim();
+
+    if (newContent.includes(search)) {
+      newContent = newContent.replace(search, replace);
+    } else {
+      console.warn('⚠️ Could not find exact search block in file.');
+    }
+  }
+
+  return newContent;
+}
+
+// 8.4 Implement Retry Loop and Verification Orchestrator
+async function main() {
+  const lintCommand = process.argv[2] || 'npm run lint';
+  const maxRetries = 3;
+  let attempt = 0;
+
+  try {
+    while (attempt < maxRetries) {
+      attempt++;
+      console.log(`🧹 Attempt ${attempt}/${maxRetries}: Running "${lintCommand}"...`);
+      const { success, output } = await runLint(lintCommand);
+
+      if (success) {
+        console.log('✅ Lint pass successful!');
+        process.exit(0);
+      }
+
+      console.log('❌ Lint errors found. Invoking AI to fix...');
+      
+      // For MVP, we'll try to find the first file with an error in the output
+      // Simple heuristic: look for absolute or relative paths
+      const fileMatch = output.match(/(\/[\w\-\.\/]+\.(ts|js|tsx|jsx))/);
+      if (!fileMatch) {
+        console.error('Could not identify file to fix from error log.');
+        process.exit(1);
+      }
+
+      const filePath = fileMatch[0];
+      const absolutePath = path.isAbsolute(filePath) ? filePath : path.join(process.cwd(), filePath);
+      
+      let fileContent: string;
+      try {
+        fileContent = await fs.readFile(absolutePath, 'utf-8');
+      } catch {
+        console.error(`Could not read file: ${absolutePath}`);
+        process.exit(1);
+      }
+
+      // Load Template
+      const templatePath = path.join(__dirname, '../workflows/lint-fix.md');
+      const template = await fs.readFile(templatePath, 'utf-8');
+      const prompt = template
+        .replace('{{errorLog}}', output)
+        .replace('{{filePath}}', filePath)
+        .replace('{{fileContent}}', fileContent);
+
+      const result = await runHeadless(prompt, { timeout: 120000 });
+      const patchedContent = applyPatches(fileContent, result.stdout);
+
+      if (patchedContent !== fileContent) {
+        await fs.writeFile(absolutePath, patchedContent, 'utf-8');
+        console.log(`🛠️ Applied AI patches to ${filePath}`);
+      } else {
+        console.warn('AI did not suggest any applicable patches.');
+        break; // Stop to avoid infinite loop if no changes
+      }
+    }
+
+    console.error('❌ Failed to fix all lint errors after max retries.');
+    process.exit(1);
+  } catch (error: any) {
+    console.error('💥 Error in lint-sweep:', error.message);
+    process.exit(1);
+  }
+}
+
+main();
+```
+
+pack/scripts/pre-commit.ts
+```
+import { getStagedDiff } from '../../src/git';
+import { renderPrompt } from '../../src/render';
+import { runHeadless } from '../../src/cline';
+import { parseVerdict, shouldFail } from '../../src/gating';
+import { writeArtifact, formatSummary } from '../../src/report';
+
+async function main() {
+  try {
+    const diff = await getStagedDiff();
+    if (!diff) {
+      process.exit(0);
+    }
+
+    // Since renderPrompt looks in __dirname/templates, we might need a workaround or symlink
+    // For now, let's assume it can find it or we provide a more robust pathing.
+    // Actually, src/render/index.ts uses path.join(__dirname, 'templates', `${templateId}.md`).
+    // If we run this from pack/scripts, __dirname is .../pack/scripts.
+    // We should probably update src/render to support a base path or use process.cwd().
+    
+    // Quick hack for MVP: manually interpolate for now or use relative path if we know it.
+    // Better: update src/render/index.ts to take a custom base path.
+    
+    // For this runner, let's just use a simple template string or relative read.
+    const fs = require('fs/promises');
+    const path = require('path');
+    const templatePath = path.join(__dirname, '../workflows/pre-commit-review.md');
+    const template = await fs.readFile(templatePath, 'utf-8');
+    const prompt = template.replace('{{diff}}', diff);
+
+    console.log('🔍 Running pre-commit risk review...');
+    const result = await runHeadless(prompt, { timeout: 60000 });
+
+    const verdict = parseVerdict(result.stdout);
+    const failed = shouldFail(verdict);
+
+    const artifactPath = await writeArtifact(`pre-commit/${Date.now()}.md`, result.stdout);
+    
+    if (failed) {
+      console.error('❌ Risk Gate: BLOCK');
+      console.error(`Reasoning: ${result.stdout.slice(0, 500)}...`);
+      console.error(`Full report: ${artifactPath}`);
+      process.exit(1);
+    } else {
+      console.log('✅ Risk Gate: ALLOW');
+      process.exit(0);
+    }
+  } catch (error: any) {
+    console.error('💥 Error in pre-commit hook:', error.message);
+    // Fail open or closed? GEMINI.md says "defaulting to Fail Closed in CI".
+    // For pre-commit, maybe fail open to not block dev if AI is down? 
+    // Let's stick to fail closed for security.
+    process.exit(1);
+  }
+}
+
+main();
+```
+
+pack/workflows/ci-pr-review.md
+```
+# CI PR Review
+
+You are a senior engineer performing a critical PR review. Your goal is to identify bugs, security flaws, or major architectural regressions.
+
+## Criteria for FAIL:
+- **Critical Bugs**: Logic errors that will lead to crashes or incorrect data.
+- **Security Vulnerabilities**: Injection flaws, insecure storage, or broken access control.
+- **Performance Regressions**: Obvious O(n^2) logic on hot paths or resource leaks.
+- **Missing Tests**: New complex logic added without corresponding unit tests.
+
+## Criteria for PASS:
+- Code is well-structured, follows best practices, and includes sufficient tests.
+- Minor stylistic issues should be noted but do NOT constitute a FAIL.
+
+## Instructions:
+- Provide a clear, structured review.
+- Start with a summary of changes.
+- Use a bulleted list for specific findings.
+- You MUST conclude with a verdict in bold: **PASS** or **FAIL**.
+
+## PR Diff:
+{{diff}}
+
+## Verdict:
+(Provide your reasoning here and end with **PASS** or **FAIL**)
+```
+
+pack/workflows/lint-fix.md
+```
+# AI Lint Fixer
+
+You are an expert developer specializing in code quality. Your goal is to fix the provided lint errors in the given file context.
+
+## Instructions:
+- Analyze the error log and the file content.
+- Generate a patch to fix ONLY the reported errors.
+- You MUST provide the fix in a strict **SEARCH/REPLACE** block format for each change.
+
+## Format:
+<<<<SEARCH
+(exact original code)
+====
+(fixed code)
+>>>>REPLACE
+
+## Error Log:
+{{errorLog}}
+
+## File Context ({{filePath}}):
+{{fileContent}}
+
+## Fixed Patches:
+(Provide SEARCH/REPLACE blocks)
+```
+
+pack/workflows/pre-commit-review.md
+```
+# Pre-commit Risk Review
+
+You are a senior security and stability auditor. Your goal is to analyze the provided staged git diff and determine if it contains high-risk changes that should be blocked before commit.
+
+## Categories of High-Risk Changes:
+1. **Hardcoded Secrets**: API keys, passwords, private keys, or credentials.
+2. **Massive Deletions**: Unintentional or dangerous removal of critical logic or documentation.
+3. **Complex Logic**: Highly complex changes without corresponding test updates.
+4. **Breaking Changes**: Obvious regressions or breaking API changes without a major version intent.
+
+## Instructions:
+- Analyze the diff carefully.
+- Be concise but specific in your reasoning.
+- You MUST conclude with a verdict in bold: **ALLOW** or **BLOCK**.
+
+## Git Diff:
+{{diff}}
+
+## Verdict:
+(Provide your reasoning here and end with **ALLOW** or **BLOCK**)
+```
+
+bin/cline-pack.ts
+```
+#!/usr/bin/env npx tsx
+import { Command } from 'commander';
+import { listWorkflows, getWorkflow } from '../src/manifest';
+import { installPack } from '../src/install';
+import { runHeadless, runInteractive } from '../src/cline';
+import { renderPrompt } from '../src/render';
+import path from 'path';
+
+const program = new Command();
+
+program
+  .name('cline-pack')
+  .description('Standardized daily software engineering workflows powered by Cline')
+  .version('1.0.0');
+
+program
+  .command('list')
+  .description('List available workflows')
+  .action(() => {
+    const workflows = listWorkflows();
+    console.log('\n🚀 Available Workflows:');
+    workflows.forEach(w => {
+      console.log(`- ${w.id.padEnd(15)}: ${w.name} (${w.mode})`);
+      console.log(`  ${w.description}`);
+    });
+    console.log('');
+  });
+
+program
+  .command('install')
+  .description('Install the workflow pack into the current repository')
+  .option('-f, --force', 'Overwrite existing files', false)
+  .action(async (options) => {
+    console.log('📦 Installing Cline Workflow Pack...');
+    try {
+      await installPack(process.cwd(), { overwrite: options.force });
+      console.log('✨ Installation complete!');
+    } catch (error: any) {
+      console.error(`💥 Installation failed: ${error.message}`);
+      process.exit(1);
+    }
+  });
+
+program
+  .command('run <id>')
+  .description('Run a specific workflow')
+  .option('-i, --interactive', 'Run in interactive mode', false)
+  .action(async (id, options) => {
+    const workflow = getWorkflow(id);
+    if (!workflow) {
+      console.error(`❌ Workflow not found: ${id}`);
+      process.exit(1);
+    }
+
+    console.log(`🎬 Running workflow: ${workflow.name}...`);
+    
+    // For MVP, we'll assume the script runner logic handles the specifics.
+    // However, the CLI can also directly trigger the headless mode if it's a simple prompt.
+    // Most workflows in our pack have dedicated scripts in pack/scripts.
+    // Let's just delegate to those scripts for now via tsx.
+    
+    const scriptPath = path.join(__dirname, '../pack/scripts', `${id}.ts`);
+    const { spawn } = require('child_process');
+    
+    const child = spawn('npx', ['tsx', scriptPath], {
+      stdio: 'inherit'
+    });
+
+    child.on('close', (code: number) => {
+      process.exit(code);
+    });
+  });
+
+program.parse();
 ```
 
 </source_code>
