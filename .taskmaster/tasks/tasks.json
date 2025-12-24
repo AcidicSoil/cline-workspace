@@ -1,0 +1,504 @@
+{
+  "master": {
+    "tasks": [
+      {
+        "id": 1,
+        "title": "Initialize Project Structure and Foundation Layer",
+        "description": "Set up the repository structure and implement the core foundation modules including types, error handling, configuration loading, and logging infrastructure.",
+        "details": "1. Initialize a monorepo structure as defined in the PRD (`packages/foundation`, `packages/workflow`, etc.) or a modular structure if single package.\n2. Implement `foundation/types`: Define shared interfaces `Workflow`, `Step`, `RunResult`, `StepResult`, `Severity`, `HostKind`.\n3. Implement `foundation/errors`: Create typed error classes (`PackError`, `ValidationError`, `PrereqMissingError`, `ExecutionError`) and mapping to exit codes.\n4. Implement `foundation/config`: Create logic to load config from files/env/CLI, including redaction utilities.\n5. Implement `foundation/logging`: Setup structured JSON logging with correlation IDs.\n6. Configure TypeScript, ESLint, and a test runner (e.g., Jest or Vitest).",
+        "testStrategy": "Unit tests for configuration precedence (env vs file). Verify error code mappings. Verify log output format.",
+        "priority": "high",
+        "dependencies": [],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Initialize Monorepo Structure and Tooling",
+            "description": "Set up the initial directory structure, root package.json, and install core build/test tools.",
+            "dependencies": [],
+            "details": "Initialize a pnpm monorepo workspace. Create directories `packages/foundation`, `packages/workflow`, and `packages/cli` (as placeholders). Configure root `tsconfig.json` for path aliases. Install and configure ESLint, Prettier, and Vitest at the root level. Ensure `pnpm-workspace.yaml` is correctly set up.",
+            "status": "pending",
+            "testStrategy": "Verify `pnpm install` works and that `pnpm test` and `pnpm lint` can run (even if empty) without configuration errors."
+          },
+          {
+            "id": 2,
+            "title": "Implement Foundation Types Module",
+            "description": "Define the core TypeScript interfaces and types shared across the system.",
+            "dependencies": [
+              1
+            ],
+            "details": "In `packages/foundation/src/types.ts`: Define `Workflow` (structure), `Step` (discriminated union: shell, ai, gate), `RunResult`, `StepResult`, `Severity` (enum), and `HostKind` (enum). Ensure strict typing to guide downstream implementation.",
+            "status": "pending",
+            "testStrategy": "Create a dummy test file attempting to instantiate objects matching these interfaces to verify type compilation."
+          },
+          {
+            "id": 3,
+            "title": "Implement Foundation Errors Module",
+            "description": "Create a hierarchy of typed error classes for consistent error handling and exit codes.",
+            "dependencies": [
+              1
+            ],
+            "details": "In `packages/foundation/src/errors.ts`: Create a base `PackError` class extending Error. Implement subclasses: `ValidationError` (schema issues), `PrereqMissingError` (missing tools), `ExecutionError` (runtime failures). Implement a function `getExitCode(error: Error): number` mapping these to specific integer codes.",
+            "status": "pending",
+            "testStrategy": "Unit tests ensuring each error type carries the correct properties and maps to the expected exit code."
+          },
+          {
+            "id": 4,
+            "title": "Implement Configuration Loading Logic",
+            "description": "Develop the configuration loader supporting defaults, files, and environment variables.",
+            "dependencies": [
+              2
+            ],
+            "details": "In `packages/foundation/src/config.ts`: specific a `Config` interface. Implement `loadConfig(overrides?: Partial<Config>)` that merges: Defaults -> Config File (e.g., `.packrc`) -> Environment Variables -> CLI args. Include a `redactSensitive(config)` utility for safe logging.",
+            "status": "pending",
+            "testStrategy": "Unit tests verifying precedence order (Env vars should override config files) and redaction of keys like 'API_KEY'."
+          },
+          {
+            "id": 5,
+            "title": "Implement Structured Logging Infrastructure",
+            "description": "Set up a logging utility that supports structured JSON output and correlation IDs.",
+            "dependencies": [
+              2
+            ],
+            "details": "In `packages/foundation/src/logging.ts`: Implement a `Logger` class/interface. Support log levels (DEBUG, INFO, WARN, ERROR). If `process.env.JSON_LOGS` is set, output newline-delimited JSON with fields: `timestamp`, `level`, `correlationId`, `message`, `context`. Otherwise, output human-readable text.",
+            "status": "pending",
+            "testStrategy": "Unit tests capturing stdout to verify JSON formatting and presence of correlation IDs in log entries."
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "title": "Implement Workflow Specification and Manifest Parsing",
+        "description": "Develop the schema validation and parsing logic for workflow definitions and pack manifests.",
+        "details": "1. Implement `workflow/spec`: Define the schema (JSON Schema or Zod) for the workflow format. Create `parseWorkflow` and `validateWorkflow` functions.\n2. Implement `workflow/manifest`: Create logic to parse pack manifests, enforce semantic versioning, and check host compatibility.\n3. Ensure support for defining inputs, steps (shell, AI, gate), and outputs in the schema.\n4. Implement validation logic to reject unknown fields or invalid step types.",
+        "testStrategy": "Property-based testing with fast-check or fuzzing to validate schema robustness. Unit tests with valid/invalid fixture files.",
+        "priority": "high",
+        "dependencies": [
+          1
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Define Core Workflow and Step Schemas",
+            "description": "Define the Zod schemas and TypeScript interfaces for Workflows, Inputs, Outputs, and specific Step types (Shell, AI, Gate).",
+            "dependencies": [],
+            "details": "Create `src/workflow/schema.ts`. Implement `Zod` schemas for the top-level `WorkflowDefinition`. Define specific schemas for `ShellStep` (including command, cwd, env), `AiStep` (prompt context, model parameters, output constraints), and `GateStep` (human approval message, timeout). Define `InputDefinition` and `OutputDefinition` structures. Ensure the schemas use strict mode to disallow unknown properties to prevent configuration drift.",
+            "status": "pending",
+            "testStrategy": "Unit tests verifying that valid TypeScript objects pass schema validation and objects with missing required fields or incorrect types fail as expected."
+          },
+          {
+            "id": 2,
+            "title": "Implement Parsing, Validation, and Manifest Logic",
+            "description": "Implement the parsing functions to load workflows and manifests, validating them against the defined schemas with detailed error reporting.",
+            "dependencies": [
+              1
+            ],
+            "details": "Create `src/workflow/parser.ts`. Implement `parseWorkflow(content: string, format: 'yaml'|'json')` and `validateWorkflow(obj: unknown)`. Implement `parseManifest` logic including SemVer enforcement for pack versions. Develop a custom error reporter that translates Zod validation errors into human-readable messages pointing to specific lines or steps (e.g., 'Invalid step type at index 2').",
+            "status": "pending",
+            "testStrategy": "Property-based testing (fast-check) to fuzz the parser input. Integration tests using a suite of valid and malformed fixture files to verify error message specificity."
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Build Workflow Registry and Discovery Mechanism",
+        "description": "Create the system to discover, load, and resolve workflows from installed packs and local repositories.",
+        "details": "1. Implement `workflow/registry`: Create functions `listWorkflows`, `getWorkflow(id)`, and `searchWorkflows`.\n2. Implement logic to merge built-in workflows with repo-local workflows found in `.clinerules/workflows/` (or configured paths).\n3. Ensure deterministic sorting and ID generation for discovered workflows.\n4. Handle version conflicts or duplicates based on the PRD's resolution strategy.",
+        "testStrategy": "Integration tests using temporary directories with mock workflow files to verify discovery and precedence logic.",
+        "priority": "high",
+        "dependencies": [
+          2
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Implement Recursive File System Discovery",
+            "description": "Create the mechanism to recursively scan specified directory paths (like .clinerules/workflows) for workflow definition files.",
+            "dependencies": [],
+            "details": "Use Node.js `fs` or a globbing library to recursively find files matching workflow extensions (.yml, .json). Integrate with the `parseWorkflow` function from the `workflow/spec` module to load and validate found files, gracefully handling IO errors or invalid files without crashing the process.",
+            "status": "pending",
+            "testStrategy": "Unit tests using a mocked file system (e.g., `mock-fs`) to verify recursion depth, file extension filtering, and error resilience."
+          },
+          {
+            "id": 2,
+            "title": "Implement Workflow Resolution and Precedence Logic",
+            "description": "Develop the logic to merge discovered local workflows with built-in workflows, applying specific rules for ID conflicts and sorting.",
+            "dependencies": [
+              1
+            ],
+            "details": "Create a `resolveWorkflows` function. Implement precedence logic where local repository workflows override built-in workflows if IDs match. Ensure the final list is deterministically sorted (e.g., alphabetically by ID). Handle version conflicts if strict versioning is enforced.",
+            "status": "pending",
+            "testStrategy": "Unit tests providing conflicting workflow sets (same ID, different content) to verify that local overrides built-ins and that the final output order is consistent."
+          },
+          {
+            "id": 3,
+            "title": "Develop Public Registry API Surface",
+            "description": "Build the `WorkflowRegistry` class exposing standard methods to list, retrieve, and search the resolved workflows.",
+            "dependencies": [
+              2
+            ],
+            "details": "Implement the public API methods: `listWorkflows()` (returning metadata), `getWorkflow(id)` (returning full definition), and `searchWorkflows(query)` (basic text search on title/description). The registry must initialize by invoking the discovery and resolution phases.",
+            "status": "pending",
+            "testStrategy": "Integration tests to verify that the API correctly returns data from the resolved internal state and handles non-existent IDs gracefully."
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Develop Runner Context and Execution Engine Core",
+        "description": "Implement the core execution engine that builds the run context and orchestrates step execution.",
+        "details": "1. Implement `runner/context`: specific logic to assemble execution context (`buildContext`) from params and host hooks, ensuring secret redaction.\n2. Implement `runner/steps` orchestration: Create the loop that executes steps top-to-bottom.\n3. Handle execution flow control: stop-on-failure, context passing between steps, and timeout management.\n4. Define the abstract interface for step runners (Shell, AI, Gate).",
+        "testStrategy": "Unit tests for context builder ensuring secrets are redacted. Unit tests for the execution loop ensuring it respects stop-on-failure.",
+        "priority": "high",
+        "dependencies": [
+          3
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Implement Context Builder and Secret Redaction",
+            "description": "Develop the logic to initialize the execution context, managing state variables and ensuring sensitive data is redacted.",
+            "dependencies": [],
+            "details": "Implement the `runner/context` module. Create a `buildContext` function that merges workflow parameters, environment variables, and initial state. Implement a `SecretManager` or redaction utility that wraps the output logger to automatically scrub registered secrets from execution logs.",
+            "status": "pending",
+            "testStrategy": "Unit tests ensuring `buildContext` correctly merges inputs and that the redaction utility replaces secret values with asterisks in mock log outputs."
+          },
+          {
+            "id": 2,
+            "title": "Implement Main Execution Loop and Step Runner Interface",
+            "description": "Create the core execution engine loop and define the abstract interface for various step runners.",
+            "dependencies": [
+              1
+            ],
+            "details": "Create `runner/engine.ts` containing the main `runWorkflow` function. Define the abstract `StepRunner` interface (e.g., `execute`, `cancel`). Implement the basic iteration logic that walks through the workflow's step list top-to-bottom and instantiates the correct runner type (Shell, AI, Gate) based on the step definition.",
+            "status": "pending",
+            "testStrategy": "Unit tests utilizing mock StepRunners to verify that the engine iterates through all steps in the correct order."
+          },
+          {
+            "id": 3,
+            "title": "Implement Condition Evaluation and State Logic",
+            "description": "Enhance the execution loop to handle conditional execution (skipping steps) and update context with step results.",
+            "dependencies": [
+              2
+            ],
+            "details": "Integrate expression evaluation within the loop to check `step.if` conditions against the current context before execution. Implement logic to capture step outputs and merge them into `context.vars` or `context.outputs`, enabling data passing between steps.",
+            "status": "pending",
+            "testStrategy": "Integration tests with a workflow containing conditional steps (true/false) and verifying that state updates are propagated to subsequent steps."
+          },
+          {
+            "id": 4,
+            "title": "Implement Error Handling, Timeouts, and Cleanup",
+            "description": "Add robust flow control for failures, timeouts, and resource cleanup to the execution engine.",
+            "dependencies": [
+              2,
+              3
+            ],
+            "details": "Implement `stop-on-failure` logic to halt execution when a step fails (unless `continue-on-error` is set). Add timeout management using `AbortController` or similar mechanisms for long-running steps. Ensure a `finally` block or cleanup phase runs to release resources regardless of success or failure.",
+            "status": "pending",
+            "testStrategy": "Unit tests simulating step failures and timeouts to assert that the workflow stops immediately and reports the correct error status."
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "title": "Implement Concrete Step Runners and Formatting",
+        "description": "Implement the logic for Shell, AI, and Human Gate steps, along with output formatting.",
+        "details": "1. `runShellStep`: Execute shell commands, capture stdout/stderr/exitCode, enforce size limits.\n2. `runAiStep`: Define the contract for host AI adapter invocation, enforce output schema validation (JSON/text).\n3. `runGateStep`: Implement interactive prompts (approve/deny) and branching logic. Support auto-approval via params for CI mode.\n4. Implement `runner/formatting`: Create `formatHuman` and `formatJson` to render `RunResult`.\n5. Implement artifact writing logic.",
+        "testStrategy": "Unit tests with mocked shell execution. Mock AI responses to test schema validation. Test gate logic with simulated user input.",
+        "priority": "high",
+        "dependencies": [
+          4
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Implement Shell Step Runner and Stream Capture",
+            "description": "Develop the logic for executing shell commands, capturing standard streams, and enforcing output limits within the runner.",
+            "dependencies": [],
+            "details": "Implement `runShellStep` using Node.js `child_process`. Capture `stdout` and `stderr` while enforcing a maximum buffer size to prevent memory issues. Ensure the runner returns a structured `RunResult` including the exit code and timing data. Handle process timeouts and cancellation signals gracefully.",
+            "status": "pending",
+            "testStrategy": "Unit tests using mocks for `child_process.spawn` to simulate command execution, various exit codes, and stream buffering limits."
+          },
+          {
+            "id": 2,
+            "title": "Implement AI Step Runner and Adapter Interface",
+            "description": "Create the execution logic for AI-driven steps, defining the host adapter contract and enforcing output schema validation.",
+            "dependencies": [],
+            "details": "Define the `AiAdapter` interface for host communication. Implement `runAiStep` to construct the prompt payload and invoke the adapter. Integrate a validation library (e.g., Zod) to verify that the AI's response conforms to the specified `json` or `text` schema before returning the result.",
+            "status": "pending",
+            "testStrategy": "Mock the AI adapter interface to return both valid and malformed JSON responses. specific tests to ensure the validator correctly accepts or rejects the output."
+          },
+          {
+            "id": 3,
+            "title": "Implement Human Gate Runner and Interaction Logic",
+            "description": "Implement the logic for blocking user intervention steps, including interactive prompts, branching, and CI auto-approval.",
+            "dependencies": [],
+            "details": "Implement `runGateStep` to pause workflow execution and prompt the user for 'Approve' or 'Deny' via standard input. Add support for an `autoApprove` parameter to bypass interaction in CI environments. Include the logic for `formatHuman` to display relevant context to the user before the prompt.",
+            "status": "pending",
+            "testStrategy": "Simulate user input streams to verify interactive prompts. Test the `autoApprove` flag logic to ensure the step proceeds automatically when configured."
+          }
+        ]
+      },
+      {
+        "id": 6,
+        "title": "Implement Core Integrations (Git, GitHub, Test, Lint)",
+        "description": "Develop reusable integration primitives for interacting with external tools.",
+        "details": "1. `integrations/git`: Implement wrappers for `git diff`, `git status`, `git show`.\n2. `integrations/github-gh`: Implement wrappers for `gh pr view`, `gh pr diff`, `gh pr review`. Handle missing `gh` CLI gracefully.\n3. `integrations/test-runner`: specific logic to run tests and parse logs for failure signatures.\n4. `integrations/linter`: Logic to run lint commands, apply fixes, and verify clean state.\n5. Ensure all integrations use the `foundation/errors` for consistent failure handling.",
+        "testStrategy": "Integration tests against a local git repository fixture. Mock `gh` CLI calls for unit testing.",
+        "priority": "medium",
+        "dependencies": [
+          1
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Implement Git CLI Wrapper",
+            "description": "Develop a wrapper module for local git operations to abstract command execution and parsing.",
+            "dependencies": [],
+            "details": "Create `integrations/git` module. Implement functions to execute `git diff`, `git status`, and `git show`. Ensure output is parsed into structured data (e.g., list of modified files) and shell errors are mapped to `foundation/errors`. Handle cross-platform line endings.",
+            "status": "pending",
+            "testStrategy": "Integration tests using a temporary local git repository to verify command execution and output parsing."
+          },
+          {
+            "id": 2,
+            "title": "Implement GitHub CLI Wrapper",
+            "description": "Develop a wrapper for the `gh` CLI tool to interact with Pull Requests and Reviews.",
+            "dependencies": [],
+            "details": "Create `integrations/github-gh` module. Implement wrappers for `gh pr view`, `gh pr diff`, and `gh pr review`. Include a pre-check for the existence of the `gh` binary. Use the `--json` flag where possible for structured parsing. Handle missing CLI tools gracefully.",
+            "status": "pending",
+            "testStrategy": "Unit tests with mocked `gh` CLI stdout responses to verify JSON parsing and error handling logic."
+          },
+          {
+            "id": 3,
+            "title": "Implement Test Runner Integration",
+            "description": "Create a generic test execution integration that can parse logs for failure signatures.",
+            "dependencies": [],
+            "details": "Create `integrations/test-runner`. Implement logic to run a provided test command string. Add output parsing logic to detect common failure keywords or patterns in stdout/stderr to determine specific failure causes beyond just exit codes.",
+            "status": "pending",
+            "testStrategy": "Unit tests simulating various test runner outputs (pass, fail, timeout) to verify log parsing accuracy."
+          },
+          {
+            "id": 4,
+            "title": "Implement Linter Integration",
+            "description": "Develop logic to execute lint commands and optional auto-fix routines.",
+            "dependencies": [],
+            "details": "Create `integrations/linter`. Implement a function that accepts lint check commands and fix commands. Logic should support running the fix command first (if requested) followed by the check command to verify a clean state. Standardize exit code handling.",
+            "status": "pending",
+            "testStrategy": "Integration tests running against sample code files with known linting violations to verify detection and fix execution."
+          }
+        ]
+      },
+      {
+        "id": 7,
+        "title": "Create MVP Workflow Catalog",
+        "description": "Implement the 'PR Review' and 'Lint Sweep' workflows using the defined schema and integrations.",
+        "details": "1. Define `workflows/pr-review`: Steps to fetch PR metadata, diff, analyze risk, and optionally submit review.\n2. Define `workflows/lint-sweep`: Steps to run linter, apply fixes, re-run tests, and summarize.\n3. Implement specific prompt templates for the AI analysis steps within these workflows.\n4. Verify these workflows against the `workflow/spec` schema.",
+        "testStrategy": "End-to-end tests using the in-process runner with mocked integrations to verify workflow logic flow.",
+        "priority": "medium",
+        "dependencies": [
+          5,
+          6
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Implement PR Review Workflow and Prompts",
+            "description": "Define the 'pr-review' workflow configuration including steps for metadata retrieval, risk analysis, and review submission.",
+            "dependencies": [],
+            "details": "Create the `workflows/pr-review` definition file. Define steps to fetch PR metadata and diffs using the integration primitives. Implement specific prompt templates for the AI analysis step to assess risk and code quality. Validate the workflow definition against the schema.",
+            "status": "pending",
+            "testStrategy": "Validate JSON/YAML against schema. Use the in-process runner with mocked PR data to verify step sequencing."
+          },
+          {
+            "id": 2,
+            "title": "Implement Lint Sweep Workflow Configuration",
+            "description": "Define the 'lint-sweep' workflow configuration including steps for linting, auto-fixing, testing, and summarization.",
+            "dependencies": [],
+            "details": "Create the `workflows/lint-sweep` definition file. Define steps to execute linter commands, apply automatic fixes, re-run tests to ensure stability, and use AI to summarize the changes. Validate the workflow definition against the schema.",
+            "status": "pending",
+            "testStrategy": "Validate JSON/YAML against schema. Use the in-process runner with mocked linter output to verify flow logic."
+          }
+        ]
+      },
+      {
+        "id": 8,
+        "title": "Build Standalone CLI Adapter",
+        "description": "Develop the primary CLI interface for installing, listing, and running workflows.",
+        "details": "1. Implement `adapters/cli`: Use a library like Commander or Yargs.\n2. Implement `install` command (if applicable for packing) or path configuration.\n3. Implement `list` command to show available workflows from the registry.\n4. Implement `run <workflow>` command: Map CLI args to workflow params, invoke the Runner, and render output using `runner/formatting`.\n5. Ensure proper exit codes based on run results.",
+        "testStrategy": "E2E tests: Invoke the compiled CLI against a fixture project and assert stdout/stderr and exit codes.",
+        "priority": "medium",
+        "dependencies": [
+          7
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Setup CLI Entry Point and Commander Configuration",
+            "description": "Initialize the CLI adapter structure, configure Commander/Yargs, and set up the main entry point with version and help info.",
+            "dependencies": [],
+            "details": "Create `src/adapters/cli/index.ts` (or similar) as the main entry point. Configure the chosen library (Commander is recommended). define global options (e.g., `--verbose`, `--json`). Ensure the binary is executable and linked in `package.json` under `bin`. Setup signal handling for graceful shutdown.",
+            "status": "pending",
+            "testStrategy": "Execute the CLI with `--version` and `--help` to verify basic invocation."
+          },
+          {
+            "id": 2,
+            "title": "Implement Workflow Discovery Command (List)",
+            "description": "Create the `list` command to display available workflows from the registry.",
+            "dependencies": [
+              1
+            ],
+            "details": "Implement `list` subcommand. Integrate with `WorkflowRegistry` (stub or interface if not fully ready) to fetch workflows. Render the output in a user-friendly table format (using `cli-table3` or similar) showing ID, Name, and Description. Support a `--json` flag for machine-readable output.",
+            "status": "pending",
+            "testStrategy": "Unit test the command handler with a mocked registry. E2E test running `cli list`."
+          },
+          {
+            "id": 3,
+            "title": "Implement Workflow Execution Command (Run)",
+            "description": "Create the `run` command to parse arguments and trigger the workflow runner.",
+            "dependencies": [
+              1
+            ],
+            "details": "Implement `run <workflow-id>` subcommand. Parse dynamic arguments passed after the workflow ID (using `--` delimiter or dynamic flags based on workflow params if possible). Map these CLI arguments to the input object expected by `Runner.run`. Invoke the Runner (stub or interface). Handle specific flags like `--dry-run`.",
+            "status": "pending",
+            "testStrategy": "Unit test argument parsing logic. Verify the correct parameters are passed to the mocked Runner."
+          },
+          {
+            "id": 4,
+            "title": "Implement Installation and Configuration Commands",
+            "description": "Create commands for managing configuration and installing external workflow packs.",
+            "dependencies": [
+              1
+            ],
+            "details": "Implement `install <source>` to add workflow packs (git URLs or local paths) to the user configuration. Implement `config` command to view or set global preferences (e.g., default provider). Ensure configuration is persisted to `~/.clinerules/config.json` (or project-specific config).",
+            "status": "pending",
+            "testStrategy": "Test configuration persistence by setting a value and reading it back. Test install command parses sources correctly."
+          },
+          {
+            "id": 5,
+            "title": "Implement Output Formatting and Error Handling",
+            "description": "Polish the CLI experience with colored output, spinners, and proper exit codes.",
+            "dependencies": [
+              2,
+              3,
+              4
+            ],
+            "details": "Integrate a library like `ora` for spinners during long-running tasks (install, run). Use `chalk` for coloring success/error messages. distinct stdout vs stderr usage. Ensure correct exit codes: 0 for success, 1 for general error, specific codes for workflow failures if needed. Catch unhandled exceptions and print user-friendly errors.",
+            "status": "pending",
+            "testStrategy": "Verify exit codes for success and failure scenarios. Visually inspect output formatting (manual verification often needed for UI polish)."
+          }
+        ]
+      },
+      {
+        "id": 9,
+        "title": "Implement MCP Server Adapter",
+        "description": "Expose workflows as Model Context Protocol (MCP) tools.",
+        "details": "1. Implement `adapters/mcp-server`: Setup an MCP server instance.\n2. Map registry workflows to MCP Tools definitions (JSON-RPC).\n3. Implement tool execution handlers that invoke the shared Runner.\n4. Ensure workflow parameters are correctly advertised in the MCP tool schema.\n5. specific error handling to map Runner errors to MCP error responses.",
+        "testStrategy": "Integration tests using an MCP client simulator to call tools and verify responses.",
+        "priority": "medium",
+        "dependencies": [
+          8
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Setup MCP Server Infrastructure and Transport",
+            "description": "Initialize the Model Context Protocol (MCP) server instance and configure the Stdio transport layer.",
+            "dependencies": [],
+            "details": "Use `@modelcontextprotocol/sdk` to instantiate the server. Configure `StdioServerTransport` for communication as this is the primary mode for local integration. Implement the initialization handshake logic and define server capabilities (specifically `tools`). Set up basic logging and global error handling middleware for the transport layer.",
+            "status": "pending",
+            "testStrategy": "Use the MCP Inspector or a simple stdio client script to verify the server starts, responds to the initialization request, and shuts down cleanly."
+          },
+          {
+            "id": 2,
+            "title": "Implement Dynamic Workflow-to-Tool Mapping and Execution",
+            "description": "Map registered workflows to MCP Tool definitions and implement the execution logic bridging the MCP protocol to the internal Runner.",
+            "dependencies": [
+              1
+            ],
+            "details": "Inject the `WorkflowRegistry` to dynamically generate the `tools/list` response. Map workflow input schemas (Zod/JSON Schema) to MCP tool input schemas. Implement the `tools/call` handler to locate the target workflow, parse arguments, invoke the internal `Runner`, and transform the `RunResult` into a standard MCP `CallToolResult` (embedding stdout/stderr/artifacts appropriately).",
+            "status": "pending",
+            "testStrategy": "Register a mock workflow, verify it appears in `tools/list` with the correct schema, and call it via `tools/call` to verify the runner is invoked and output is returned formatted correctly."
+          }
+        ]
+      },
+      {
+        "id": 10,
+        "title": "Implement Extension Generators (Gemini & LM Studio)",
+        "description": "Create adapters to generate configuration for Gemini CLI and LM Studio plugins.",
+        "details": "1. `adapters/gemini-extension`: Implement logic to generate `gemini-extension.json`. Map workflows to `customCommands`. Handle `mcpServers` config generation if needed.\n2. `adapters/lmstudio-plugin`: Create the scaffolding for an LM Studio TypeScript plugin. Implement a Tools Provider that delegates to the workflow registry.\n3. Ensure `manifest.json` generation is correct for LM Studio.",
+        "testStrategy": "Snapshot testing for the generated JSON configuration files. Unit tests for the mapping logic.",
+        "priority": "low",
+        "dependencies": [
+          9
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Implement Gemini Configuration Mapper",
+            "description": "Develop the transformation logic to convert Workflow Registry definitions into Gemini CLI configuration format.",
+            "dependencies": [],
+            "details": "Create `src/adapters/gemini/mapper.ts`. Implement a function that accepts a list of Workflows and maps their inputs, descriptions, and identifiers to the schema expected by `gemini-extension.json`. Ensure `customCommands` are correctly populated.",
+            "status": "pending",
+            "testStrategy": "Unit tests using mock workflows to verify the generated JSON structure matches the Gemini schema."
+          },
+          {
+            "id": 2,
+            "title": "Implement Gemini Config Generator Writer",
+            "description": "Create the file writing logic to output the Gemini extension configuration to disk.",
+            "dependencies": [
+              1
+            ],
+            "details": "Create `src/adapters/gemini/generator.ts`. Integrate the mapper to produce the final JSON object and write it to the specified output directory. Handle potential serialization errors.",
+            "status": "pending",
+            "testStrategy": "Integration test: Execute the generator and verify the file exists and is valid JSON."
+          },
+          {
+            "id": 3,
+            "title": "Implement LM Studio Plugin Scaffolding",
+            "description": "Create the generator for the LM Studio plugin directory structure and static manifests.",
+            "dependencies": [],
+            "details": "Create `src/adapters/lmstudio/scaffold.ts`. Implement logic to generate the necessary `manifest.json`, `package.json`, and `tsconfig.json` files required for a valid LM Studio plugin, ensuring correct metadata.",
+            "status": "pending",
+            "testStrategy": "Snapshot testing to verify the contents of the generated manifest and config files."
+          },
+          {
+            "id": 4,
+            "title": "Generate LM Studio Tool Definitions",
+            "description": "Implement the logic to generate TypeScript source code for LM Studio tool definitions derived from workflows.",
+            "dependencies": [
+              3
+            ],
+            "details": "Create `src/adapters/lmstudio/toolsGenerator.ts`. Iterate through registered workflows and generate the TypeScript code strings that define them as tools within the LM Studio plugin API, converting parameter schemas appropriately.",
+            "status": "pending",
+            "testStrategy": "Unit tests validating that generated TypeScript code matches the expected LM Studio Tool Provider interface."
+          },
+          {
+            "id": 5,
+            "title": "Generate LM Studio Execution Bridge",
+            "description": "Implement the generation of runtime logic to execute workflows via the main CLI from within the plugin.",
+            "dependencies": [
+              4
+            ],
+            "details": "Extend the generator to output the execution implementation. This code should handle the tool invocation in LM Studio, spawn the main runner process (or call the library), and map the results back to the tool output.",
+            "status": "pending",
+            "testStrategy": "Integration test: Verify the generated code logic properly handles arguments and process execution patterns."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "created": "2025-12-24T19:41:30.357Z",
+      "updated": "2025-12-24T19:41:30.357Z",
+      "description": "Tasks for master context"
+    }
+  }
+}

@@ -1,0 +1,93 @@
+{
+	"meta": {
+		"generatedAt": "2025-12-24T19:42:55.308Z",
+		"tasksAnalyzed": 10,
+		"totalTasks": 10,
+		"analysisCount": 10,
+		"thresholdScore": 5,
+		"projectName": "Taskmaster",
+		"usedResearch": true
+	},
+	"complexityAnalysis": [
+		{
+			"taskId": 1,
+			"taskTitle": "Initialize Project Structure and Foundation Layer",
+			"complexityScore": 3,
+			"recommendedSubtasks": 0,
+			"expansionPrompt": "",
+			"reasoning": "This is a foundational setup task. While critical, the complexity is relatively low as it involves standard boilerplate for a TypeScript monorepo/package structure, setting up linting/testing (Jest/Vitest), and defining basic interfaces. It's mostly configuration and defining types rather than complex logic."
+		},
+		{
+			"taskId": 2,
+			"taskTitle": "Implement Workflow Specification and Manifest Parsing",
+			"complexityScore": 5,
+			"recommendedSubtasks": 2,
+			"expansionPrompt": "Break down the schema definition into two subtasks: 1) Defining the core JSON Schema/Zod models for Workflows and Steps, and 2) Implementing the parsing/validation logic with specific error reporting for malformed files.",
+			"reasoning": "Defining a robust schema that handles various step types (Shell, AI, Gate), inputs, and outputs requires careful design to avoid future breaking changes. Validation logic needs to be strict yet provide helpful error messages."
+		},
+		{
+			"taskId": 3,
+			"taskTitle": "Build Workflow Registry and Discovery Mechanism",
+			"complexityScore": 6,
+			"recommendedSubtasks": 3,
+			"expansionPrompt": "Separate into: 1) Local file system discovery (recursive search), 2) Workflow resolution logic (handling overrides/precedence between built-ins and local files), and 3) The public Registry API surface.",
+			"reasoning": "The complexity here lies in the precedence logic (merging built-ins with local `.clinerules`), handling ID collisions, and ensuring efficient discovery without scanning unnecessary directories."
+		},
+		{
+			"taskId": 4,
+			"taskTitle": "Develop Runner Context and Execution Engine Core",
+			"complexityScore": 8,
+			"recommendedSubtasks": 4,
+			"expansionPrompt": "Decompose into: 1) Context Builder (state management), 2) The main Execution Loop (flow control), 3) Condition/Skip logic implementation, and 4) Error handling and cleanup strategy.",
+			"reasoning": "This is the core of the application. Managing state transition, secret redaction, stopping on failure, and handling timeouts/cancellation properly adds significant complexity. Concurrency (if any) or async flow control needs robust testing."
+		},
+		{
+			"taskId": 5,
+			"taskTitle": "Implement Concrete Step Runners and Formatting",
+			"complexityScore": 7,
+			"recommendedSubtasks": 3,
+			"expansionPrompt": "Split by runner type: 1) Shell Runner (with stream capture and limits), 2) AI Runner (adapter interface and validation), 3) User Interaction/Gate Runner.",
+			"reasoning": "Interacting with the OS (Shell) and external LLM APIs (AI) introduces side effects and unpredictability. The Gate step involves blocking IO or user interaction, which complicates the execution model."
+		},
+		{
+			"taskId": 6,
+			"taskTitle": "Implement Core Integrations (Git, GitHub, Test, Lint)",
+			"complexityScore": 5,
+			"recommendedSubtasks": 4,
+			"expansionPrompt": "Create separate subtasks for each integration domain: 1) Git Wrapper, 2) GitHub CLI Wrapper, 3) Test Runner Integration, 4) Linter Integration.",
+			"reasoning": "These are mostly wrapper implementation tasks. The main complexity is handling cross-platform differences in shell commands and parsing unstructured output (stdout/stderr) into structured data."
+		},
+		{
+			"taskId": 7,
+			"taskTitle": "Create MVP Workflow Catalog",
+			"complexityScore": 4,
+			"recommendedSubtasks": 2,
+			"expansionPrompt": "Divide by specific workflow: 1) Implement 'PR Review' workflow configuration and prompts, 2) Implement 'Lint Sweep' workflow configuration.",
+			"reasoning": "This is primarily configuration and prompt engineering using the primitives built in previous tasks. The code complexity is low, but verifying correctness requires end-to-end testing."
+		},
+		{
+			"taskId": 8,
+			"taskTitle": "Build Standalone CLI Adapter",
+			"complexityScore": 4,
+			"recommendedSubtasks": 0,
+			"expansionPrompt": "",
+			"reasoning": "Standard CLI implementation using libraries like Commander or Yargs. Mapping arguments to the internal API is straightforward. The main effort is ensuring good UX (help text, colors, spinners)."
+		},
+		{
+			"taskId": 9,
+			"taskTitle": "Implement MCP Server Adapter",
+			"complexityScore": 6,
+			"recommendedSubtasks": 2,
+			"expansionPrompt": "Split into: 1) MCP Server setup and transport layer, 2) Dynamic tool mapping (converting Registry workflows to MCP Tool schemas).",
+			"reasoning": "Mapping the internal Workflow schema to the MCP Tool schema dynamically is non-trivial. It involves type conversion and ensuring that the execution output is formatted correctly for the MCP protocol."
+		},
+		{
+			"taskId": 10,
+			"taskTitle": "Implement Extension Generators (Gemini & LM Studio)",
+			"complexityScore": 3,
+			"recommendedSubtasks": 0,
+			"expansionPrompt": "",
+			"reasoning": "This involves generating JSON configuration files based on the registry. It's a data transformation task with low logical complexity."
+		}
+	]
+}
