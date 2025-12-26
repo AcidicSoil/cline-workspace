@@ -1,0 +1,19 @@
+{
+  "name": "@workflow-pack/registry",
+  "version": "0.1.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@workflow-pack/foundation": "workspace:*",
+    "@workflow-pack/workflow": "workspace:*",
+    "fast-glob": "^3.3.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/node": "^20.0.0"
+  }
+}
