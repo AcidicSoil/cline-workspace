@@ -1,0 +1,10 @@
+{
+  "type": "plugin",
+  "runner": "node",
+  "owner": "workflow-pack",
+  "name": "workflow-pack-monorepo",
+  "version": "0.0.0",
+  "revision": 1,
+  "description": "Workflow pack plugin",
+  "entry": "dist/index.js"
+}

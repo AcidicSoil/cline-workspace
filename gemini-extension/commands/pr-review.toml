@@ -1,0 +1,8 @@
+description = "Analyze a PR diff and generate a review"
+prompt = """
+Run the workflow tool named "pr-review".
+Required params: prNumber
+If arguments are provided, parse them into workflow parameters.
+Arguments:
+{{args}}
+"""

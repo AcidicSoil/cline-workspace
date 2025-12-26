@@ -1,0 +1,24 @@
+{
+  "name": "workflow-pack-monorepo",
+  "version": "0.0.0",
+  "contextFileName": "GEMINI.md",
+  "mcpServers": {
+    "workflow-pack": {
+      "command": "node",
+      "args": [
+        "${extensionPath}${/}mcp-server.mjs"
+      ],
+      "cwd": "${extensionPath}"
+    }
+  },
+  "customCommands": {
+    "lint-sweep": {
+      "description": "Run linters, apply fixes, and summarize changes",
+      "prompt": "Run the workflow tool named \"lint-sweep\".\nNo required params.\nIf arguments are provided, parse them into workflow parameters.\nArguments:\n{{args}}"
+    },
+    "pr-review": {
+      "description": "Analyze a PR diff and generate a review",
+      "prompt": "Run the workflow tool named \"pr-review\".\nRequired params: prNumber\nIf arguments are provided, parse them into workflow parameters.\nArguments:\n{{args}}"
+    }
+  }
+}

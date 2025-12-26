@@ -1,0 +1,8 @@
+description = "Run linters, apply fixes, and summarize changes"
+prompt = """
+Run the workflow tool named "lint-sweep".
+No required params.
+If arguments are provided, parse them into workflow parameters.
+Arguments:
+{{args}}
+"""
