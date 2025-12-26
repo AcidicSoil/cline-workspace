@@ -1,5 +1,5 @@
 import execa from 'execa';
-import { ExecutionError } from '@workflow-pack/foundation/dist/errors';
+import { ExecutionError } from '@workflow-pack/foundation'
 
 export class TestRunner {
   constructor(private cwd: string = process.cwd()) {}

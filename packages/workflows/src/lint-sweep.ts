@@ -1,4 +1,4 @@
-import { WorkflowDefinition } from '@workflow-pack/workflow/dist/schema';
+import { WorkflowDefinition } from '@workflow-pack/workflow';
 
 export const LintSweepWorkflow: WorkflowDefinition = {
   id: 'lint-sweep',

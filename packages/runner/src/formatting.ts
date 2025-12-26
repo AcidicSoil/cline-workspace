@@ -1,4 +1,4 @@
-import { RunResult } from '@workflow-pack/foundation/dist/types';
+import { RunResult } from '@workflow-pack/foundation';
 
 export function formatJson(result: RunResult): string {
   return JSON.stringify(result, null, 2);

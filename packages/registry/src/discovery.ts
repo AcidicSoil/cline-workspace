@@ -1,8 +1,8 @@
 import fg from 'fast-glob';
 import fs from 'fs/promises';
-import { parseWorkflow } from '@workflow-pack/workflow/dist/parser';
-import { WorkflowDefinition } from '@workflow-pack/workflow/dist/schema';
-import { Logger } from '@workflow-pack/foundation/dist/logging';
+import { parseWorkflow } from '@workflow-pack/workflow';
+import { WorkflowDefinition } from '@workflow-pack/workflow';
+import { Logger } from '@workflow-pack/foundation';
 
 // Step 2: Discovery Implementation
 // Scans for .yml/.json workflow files

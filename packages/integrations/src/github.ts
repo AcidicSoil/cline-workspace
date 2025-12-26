@@ -1,5 +1,5 @@
 import execa from 'execa';
-import { GhError, PrereqMissingError } from '@workflow-pack/foundation/dist/errors';
+import { GhError, PrereqMissingError } from '@workflow-pack/foundation';
 
 export class GitHub {
   constructor(private cwd: string = process.cwd()) {}
@@ -15,12 +15,9 @@ export class GitHub {
   private async exec(args: string[]): Promise<any> {
     await this.checkBinary();
     try {
-      // Use --json only if arguments don't already include it or output raw text
-      // For this simplified version, we assume JSON output is desired for API-like calls
       const { stdout } = await execa('gh', args, {
         cwd: this.cwd
       });
-      // Try parse JSON, else return text (e.g. for diffs)
       try {
         return JSON.parse(stdout);
       } catch {

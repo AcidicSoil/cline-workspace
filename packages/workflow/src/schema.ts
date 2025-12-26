@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { StepType, HostKind } from '@workflow-pack/foundation/dist/types';
+import { StepType, HostKind } from '@workflow-pack/foundation';
 
 // Step 2: Schema Definition
 // Addressing Q13 (dryRun) and Q18 (onFailure)
@@ -40,6 +40,8 @@ export const StepSchema = z.discriminatedUnion('type', [
   AiStepSchema,
   GateStepSchema,
 ]);
+
+export type Step = z.infer<typeof StepSchema>;
 
 export const ParamSchema = z.object({
   type: z.string(),

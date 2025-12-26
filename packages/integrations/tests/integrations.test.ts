@@ -2,7 +2,7 @@ import { Git } from '../src/git';
 import { GitHub } from '../src/github';
 import { TestRunner } from '../src/test-runner';
 import { Linter } from '../src/linter';
-import { GitError, GhError, PrereqMissingError } from '@workflow-pack/foundation/dist/errors';
+import { GitError, GhError, PrereqMissingError } from '@workflow-pack/foundation'
 import execa from 'execa';
 
 jest.mock('execa');

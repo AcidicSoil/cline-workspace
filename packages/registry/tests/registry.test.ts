@@ -1,6 +1,6 @@
 import { WorkflowRegistry } from '../src/registry';
 import * as discovery from '../src/discovery';
-import { WorkflowDefinition } from '@workflow-pack/workflow/dist/schema';
+import { WorkflowDefinition } from '@workflow-pack/workflow'
 
 // Mocking the whole module is tricky with TS jest sometimes, let's use spyOn approach or manual mock if needed.
 // But jest.mock should work if paths are correct.

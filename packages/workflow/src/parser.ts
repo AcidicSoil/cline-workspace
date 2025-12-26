@@ -1,6 +1,6 @@
 import yaml from 'js-yaml';
 import { WorkflowSchema, WorkflowDefinition } from './schema';
-import { ValidationError } from '@workflow-pack/foundation/dist/errors';
+import { ValidationError } from '@workflow-pack/foundation';
 
 // Step 4: Parser Implementation
 // Validates JSON/YAML against schema with error reporting

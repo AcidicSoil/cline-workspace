@@ -1,5 +1,5 @@
-import { WorkflowDefinition, Step } from '@workflow-pack/workflow/dist/schema';
-import { RunResult, StepResult } from '@workflow-pack/foundation/dist/types';
+import { WorkflowDefinition, Step } from '@workflow-pack/workflow';
+import { RunResult, StepResult } from '@workflow-pack/foundation';
 import { ExecutionContext } from './context';
 import { StepRunner, RunnerOptions } from './types';
 import safeEval from 'safe-eval';

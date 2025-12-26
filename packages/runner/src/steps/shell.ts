@@ -1,6 +1,6 @@
 import { spawn } from 'child_process';
 import { StepRunner } from '../types';
-import { ShellStep, StepResult } from '@workflow-pack/foundation/dist/types';
+import { ShellStep, StepResult } from '@workflow-pack/foundation';
 import { ExecutionContext } from '../context';
 
 export class ShellStepRunner implements StepRunner {

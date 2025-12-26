@@ -15,10 +15,12 @@ module.exports = {
     '^@workflow-pack/registry/dist/(.*)$': '<rootDir>/packages/registry/src/$1',
     '^@workflow-pack/runner/dist/(.*)$': '<rootDir>/packages/runner/src/$1',
     '^@workflow-pack/integrations/dist/(.*)$': '<rootDir>/packages/integrations/src/$1',
+    '^@workflow-pack/workflows/dist/(.*)$': '<rootDir>/packages/workflows/src/$1',
     '^@workflow-pack/foundation$': '<rootDir>/packages/foundation/src',
     '^@workflow-pack/workflow$': '<rootDir>/packages/workflow/src',
     '^@workflow-pack/registry$': '<rootDir>/packages/registry/src',
     '^@workflow-pack/runner$': '<rootDir>/packages/runner/src',
     '^@workflow-pack/integrations$': '<rootDir>/packages/integrations/src',
+    '^@workflow-pack/workflows$': '<rootDir>/packages/workflows/src',
   },
 };

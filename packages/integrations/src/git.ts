@@ -1,5 +1,5 @@
 import execa from 'execa';
-import { GitError } from '@workflow-pack/foundation/dist/errors';
+import { GitError } from '@workflow-pack/foundation';
 
 export class Git {
   constructor(private cwd: string = process.cwd()) {}
@@ -25,6 +25,10 @@ export class Git {
 
   async status(): Promise<string> {
     return this.exec(['status', '--porcelain']);
+  }
+
+  async statusRaw(): Promise<string> {
+    return this.exec(['status']);
   }
 
   async show(target: string): Promise<string> {

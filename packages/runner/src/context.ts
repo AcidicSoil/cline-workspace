@@ -1,5 +1,5 @@
-import { Logger } from '@workflow-pack/foundation/dist/logging';
-import { redactSensitive } from '@workflow-pack/foundation/dist/config';
+import { Logger } from '@workflow-pack/foundation';
+import { redactSensitive } from '@workflow-pack/foundation';
 
 export interface ContextData {
   vars: Record<string, any>;

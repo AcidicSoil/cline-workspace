@@ -1,0 +1,28 @@
+{
+  "name": "@workflow-pack/cli",
+  "version": "0.1.0",
+  "bin": {
+    "workflow-pack": "./dist/index.js"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@workflow-pack/foundation": "workspace:*",
+    "@workflow-pack/workflow": "workspace:*",
+    "@workflow-pack/registry": "workspace:*",
+    "@workflow-pack/runner": "workspace:*",
+    "@workflow-pack/workflows": "workspace:*",
+    "commander": "^11.0.0",
+    "chalk": "^4.1.2",
+    "ora": "^5.4.1",
+    "cli-table3": "^0.6.3"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/node": "^20.0.0"
+  }
+}

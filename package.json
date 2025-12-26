@@ -3,6 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
+    "build": "pnpm --recursive run build",
     "test": "jest",
     "lint": "eslint ."
   },
@@ -14,5 +15,5 @@
     "@types/node": "^20.0.0",
     "@types/jest": "^29.0.0"
   },
-  "packageManager": "pnpm@10.25.0"
+  "packageManager": "pnpm@8.0.0"
 }

@@ -1,8 +1,8 @@
 import { WorkflowEngine } from '../src/engine';
 import { ExecutionContext } from '../src/context';
-import { Logger } from '@workflow-pack/foundation/dist/logging';
+import { Logger } from '@workflow-pack/foundation'
 import { StepRunner } from '../src/types';
-import { WorkflowDefinition } from '@workflow-pack/workflow/dist/schema';
+import { WorkflowDefinition } from '@workflow-pack/workflow'
 
 describe('WorkflowEngine', () => {
   let context: ExecutionContext;

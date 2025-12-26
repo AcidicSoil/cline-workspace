@@ -1,7 +1,7 @@
 import { StepRunner } from '../types';
-import { AiStep, StepResult } from '@workflow-pack/foundation/dist/types';
+import { AiStep, StepResult } from '@workflow-pack/foundation';
 import { ExecutionContext } from '../context';
-import { ValidationError } from '@workflow-pack/foundation/dist/errors';
+import { ValidationError } from '@workflow-pack/foundation';
 
 // Adapter interface for host AI capability
 export interface AiAdapter {

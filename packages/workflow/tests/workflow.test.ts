@@ -1,6 +1,6 @@
 import { parseWorkflow } from '../src/parser';
 import { validateManifest } from '../src/manifest';
-import { ValidationError } from '@workflow-pack/foundation/dist/errors';
+import { ValidationError } from '@workflow-pack/foundation'
 
 describe('Workflow Package', () => {
   describe('Schema Validation', () => {

@@ -1,4 +1,4 @@
-import { Step, StepResult } from '@workflow-pack/foundation/dist/types';
+import { Step, StepResult } from '@workflow-pack/foundation'
 import { ExecutionContext } from './context';
 
 export interface StepRunner {

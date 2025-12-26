@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import semver from 'semver';
-import { ValidationError } from '@workflow-pack/foundation/dist/errors';
+import { ValidationError } from '@workflow-pack/foundation';
 
 // Step 3: Manifest Implementation
 // Addressing Q8 (engines check)

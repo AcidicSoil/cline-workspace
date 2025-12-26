@@ -1,7 +1,7 @@
 import { DiscoveredWorkflow, scanForWorkflows } from './discovery';
-import { WorkflowDefinition } from '@workflow-pack/workflow/dist/schema';
-import { PackError } from '@workflow-pack/foundation/dist/errors';
-import { Logger } from '@workflow-pack/foundation/dist/logging';
+import { WorkflowDefinition } from '@workflow-pack/workflow';
+import { PackError } from '@workflow-pack/foundation';
+import { Logger } from '@workflow-pack/foundation';
 
 export class RegistryError extends PackError {
   constructor(message: string) {
@@ -19,6 +19,17 @@ export class WorkflowRegistry {
     const installed = await scanForWorkflows(installedDirs, 'installed', this.logger);
 
     this.resolveWorkflows([...local, ...installed]);
+  }
+
+  /**
+   * Manually register a workflow object
+   */
+  public registerWorkflow(definition: WorkflowDefinition, source: 'local' | 'installed' = 'installed') {
+    this.resolveWorkflows([{
+      definition,
+      path: 'memory://' + definition.id,
+      source
+    }]);
   }
 
   // Q2: Resolution logic - ID collision handling
@@ -41,7 +52,6 @@ export class WorkflowRegistry {
         this.workflows.set(id, candidate);
       } else if (existing.source === candidate.source) {
          // Collision in same source type
-         // If paths are different, it's an ambiguity error
          if (existing.path !== candidate.path) {
             this.logger?.warn(`Duplicate workflow ID '${id}' found in ${existing.path} and ${candidate.path}. Keeping the first one.`);
          }
@@ -61,7 +71,7 @@ export class WorkflowRegistry {
   public listWorkflows(includeHidden = false): WorkflowDefinition[] {
     const list = Array.from(this.workflows.values())
       .map(w => w.definition)
-      .filter(w => includeHidden || !(w as any).hidden); // Check for 'hidden' prop if we add it to schema, or metadata
+      .filter(w => includeHidden || !(w as any).hidden);
 
     // Deterministic sort
     return list.sort((a, b) => a.id.localeCompare(b.id));

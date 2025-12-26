@@ -1,0 +1,25 @@
+{
+  "name": "@workflow-pack/mcp-server",
+  "version": "0.1.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "workflow-mcp": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@workflow-pack/foundation": "workspace:*",
+    "@workflow-pack/workflow": "workspace:*",
+    "@workflow-pack/registry": "workspace:*",
+    "@workflow-pack/runner": "workspace:*",
+    "@workflow-pack/workflows": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/node": "^20.0.0"
+  }
+}

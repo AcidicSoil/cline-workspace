@@ -9,6 +9,15 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
-    "isolatedModules": true
+    "isolatedModules": true,
+    "baseUrl": ".",
+    "paths": {
+      "@workflow-pack/foundation": ["packages/foundation/src"],
+      "@workflow-pack/workflow": ["packages/workflow/src"],
+      "@workflow-pack/registry": ["packages/registry/src"],
+      "@workflow-pack/runner": ["packages/runner/src"],
+      "@workflow-pack/integrations": ["packages/integrations/src"],
+      "@workflow-pack/workflows": ["packages/workflows/src"]
+    }
   }
 }

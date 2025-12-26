@@ -2,8 +2,8 @@ import { ShellStepRunner } from '../src/steps/shell';
 import { AiStepRunner } from '../src/steps/ai';
 import { GateStepRunner } from '../src/steps/gate';
 import { ExecutionContext } from '../src/context';
-import { Logger } from '@workflow-pack/foundation/dist/logging';
-import { HostKind } from '@workflow-pack/foundation/dist/types';
+import { Logger } from '@workflow-pack/foundation'
+import { HostKind } from '@workflow-pack/foundation'
 
 describe('Concrete Step Runners', () => {
   let context: ExecutionContext;

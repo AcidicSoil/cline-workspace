@@ -1,5 +1,5 @@
 import { StepRunner } from '../types';
-import { GateStep, StepResult, HostKind } from '@workflow-pack/foundation/dist/types';
+import { GateStep, StepResult, HostKind } from '@workflow-pack/foundation';
 import { ExecutionContext } from '../context';
 import readline from 'readline';
 
