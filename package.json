@@ -6,7 +6,7 @@
     "build": "pnpm --recursive run build",
     "test": "jest",
     "lint": "eslint .",
-    "code": "codefetch --include-dir packages --exclude-file *.tsbuildinfo -o src.md"
+    "code": "codefetch -t 5 --include-dir packages --exclude-file *.tsbuildinfo -o packages.md"
   },
   "devDependencies": {
     "@types/jest": "^29.0.0",
