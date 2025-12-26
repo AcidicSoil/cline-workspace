@@ -1,1768 +1,2376 @@
 <source_code>
-src/cline/index.ts
-```
-import { spawn } from 'child_process';
-
-export interface ClineOptions {
-  cwd?: string;
-  env?: NodeJS.ProcessEnv;
-  timeout?: number;
-}
-
-export interface ClineResult {
-  stdout: string;
-  stderr: string;
-  exitCode: number | null;
-}
-
-export async function runHeadless(prompt: string, opts: ClineOptions = {}): Promise<ClineResult> {
-  return new Promise((resolve, reject) => {
-    const child = spawn('cline', ['task', 'new', prompt], {
-      cwd: opts.cwd || process.cwd(),
-      env: { ...process.env, ...opts.env },
-      stdio: ['ignore', 'pipe', 'pipe'] // Ignore stdin, pipe stdout/stderr
-    });
-
-    let stdout = '';
-    let stderr = '';
-
-    child.stdout.on('data', (data) => {
-      stdout += data.toString();
-    });
-
-    child.stderr.on('data', (data) => {
-      stderr += data.toString();
-    });
-
-    if (opts.timeout) {
-      setTimeout(() => {
-        child.kill();
-        reject(new Error(`Cline task timed out after ${opts.timeout}ms`));
-      }, opts.timeout);
-    }
-
-    child.on('close', (code) => {
-      resolve({
-        stdout,
-        stderr,
-        exitCode: code
-      });
-    });
-
-    child.on('error', (err) => {
-      reject(err);
-    });
-  });
-}
-
-export async function runInteractive(prompt: string, opts: ClineOptions = {}): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const child = spawn('cline', ['task', 'new', prompt], {
-      cwd: opts.cwd || process.cwd(),
-      env: { ...process.env, ...opts.env },
-      stdio: 'inherit' // Inherit stdio for interaction
-    });
-
-    child.on('close', (code) => {
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(new Error(`Cline exited with code ${code}`));
-      }
-    });
-
-    child.on('error', (err) => {
-      reject(err);
-    });
-  });
-}
-
-export async function followTask(taskId: string, opts: ClineOptions = {}): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const child = spawn('cline', ['task', 'view', taskId], {
-      cwd: opts.cwd || process.cwd(),
-      env: { ...process.env, ...opts.env },
-      stdio: 'inherit'
-    });
-
-    child.on('close', (code) => {
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(new Error(`Cline view exited with code ${code}`));
-      }
-    });
-
-    child.on('error', (err) => {
-      reject(err);
-    });
-  });
-}
-```
-
-src/gating/index.ts
-```
-export type Verdict = 'PASS' | 'FAIL' | 'ALLOW' | 'BLOCK' | 'UNKNOWN';
-
-export interface GatingPolicy {
-  failOnUnknown: boolean;
-}
-
-export function parseVerdict(text: string): Verdict {
-  // Look for bold markers or standalone keywords
-  // Priority: BLOCK/ALLOW (often used in gates) then FAIL/PASS
-  const blockMatch = /\b(BLOCK)\b/i.exec(text);
-  if (blockMatch) return 'BLOCK';
-
-  const allowMatch = /\b(ALLOW)\b/i.exec(text);
-  if (allowMatch) return 'ALLOW';
-
-  const failMatch = /\b(FAIL)\b/i.exec(text);
-  if (failMatch) return 'FAIL';
-
-  const passMatch = /\b(PASS)\b/i.exec(text);
-  if (passMatch) return 'PASS';
-
-  return 'UNKNOWN';
-}
-
-export function shouldFail(verdict: Verdict, policy: GatingPolicy = { failOnUnknown: true }): boolean {
-  switch (verdict) {
-    case 'BLOCK':
-    case 'FAIL':
-      return true;
-    case 'ALLOW':
-    case 'PASS':
-      return false;
-    case 'UNKNOWN':
-    default:
-      return policy.failOnUnknown;
-  }
-}
-```
-
-src/gating/verdict.ts
-```
-export type VerdictStatus = 'PASS' | 'FAIL' | 'ALLOW' | 'BLOCK';
-
-export interface Verdict {
-  verdict: VerdictStatus;
-  confidence: number;
-  reasoning: string;
-}
-
-export interface ParseConfig {
-  failOnUnknown: boolean;
-  defaultVerdict: VerdictStatus;
-}
-
-const DEFAULT_CONFIG: ParseConfig = {
-  failOnUnknown: true,
-  defaultVerdict: 'BLOCK',
-};
-
-/**
- * Extracts the content within [VERDICT]...[/VERDICT] tags or looks for the headers if tags are missing.
- * For now, we'll assume a structured format like:
- * [VERDICT]
- * Status: PASS
- * Confidence: 0.95
- * Reasoning: ...
- * [/VERDICT]
- */
-function extractVerdictSection(output: string): string | null {
-  const match = output.match(/\[VERDICT\]([\s\S]*?)\[\/VERDICT\]/i);
-  if (match) {
-    return match[1].trim();
-  }
-  // Fallback: try to find "Status:" and "Reasoning:" if no tags
-  if (output.match(/Status:/i) && output.match(/Reasoning:/i)) {
-    return output;
-  }
-  return null;
-}
-
-function parseStatus(text: string): VerdictStatus | null {
-  const match = text.match(/Status:\s*(PASS|FAIL|ALLOW|BLOCK)/i);
-  if (match) {
-    return match[1].toUpperCase() as VerdictStatus;
-  }
-  return null;
-}
-
-function parseConfidence(text: string): number {
-  const match = text.match(/Confidence:\s*([0-9]*\.?[0-9]+)/i);
-  if (match) {
-    const val = parseFloat(match[1]);
-    return isNaN(val) ? 0 : Math.min(Math.max(val, 0), 1);
-  }
-  return 0; // Default confidence
-}
-
-function parseReasoning(text: string): string {
-  const match = text.match(/Reasoning:\s*([\s\S]*?)(?:$|Status:|Confidence:)/i);
-  if (match) {
-    return match[1].trim();
-  }
-  // If we extracted a section, maybe the whole thing (minus headers) is reasoning?
-  // For now, let's just return "No specific reasoning found" or part of the text.
-  return "No specific reasoning parsed.";
-}
-
-export function parseVerdict(modelOutput: string, config: ParseConfig = DEFAULT_CONFIG): Verdict {
-  const section = extractVerdictSection(modelOutput);
-
-  if (!section) {
-    return {
-      verdict: config.defaultVerdict,
-      confidence: 0,
-      reasoning: "Failed to extract verdict section from output.",
-    };
-  }
-
-  const status = parseStatus(section);
-  const confidence = parseConfidence(section);
-  // Improved reasoning extraction: take everything after "Reasoning:" until end of string
-  const reasoningMatch = section.match(/Reasoning:\s*([\s\S]*)/i);
-  const reasoning = reasoningMatch ? reasoningMatch[1].trim() : "No reasoning provided.";
-
-  if (!status) {
-    return {
-      verdict: config.defaultVerdict,
-      confidence: 0,
-      reasoning: `Found verdict section but failed to parse status. Extracted: ${section.substring(0, 50)}...`,
-    };
-  }
-
-  return {
-    verdict: status,
-    confidence,
-    reasoning,
-  };
-}
-```
-
-src/gemini_ext/commands.ts
-```
-import { handleListWorkflows, handleRunWorkflow } from '../mcp/tools';
-
-async function main() {
-  const command = process.argv[2];
-  
-  try {
-    if (command === 'list') {
-      const workflows = await handleListWorkflows({});
-      console.log(JSON.stringify(workflows, null, 2));
-    } else if (command === 'run') {
-      const workflowId = process.argv[3];
-      if (!workflowId) {
-        throw new Error('Workflow ID required');
-      }
-      // Simple arg parsing for demo
-      const result = await handleRunWorkflow({ workflow_id: workflowId });
-      console.log(JSON.stringify(result, null, 2));
-      if (result.status !== 'success') {
-        process.exit(1);
-      }
-    } else {
-      console.error('Unknown command');
-      process.exit(1);
-    }
-  } catch (error: any) {
-    console.error(error.message);
-    process.exit(1);
-  }
-}
-
-if (require.main === module) {
-  main();
-}
-```
-
-src/gemini_ext/gemini-extension.json
+packages/cli/package.json
 ```
 {
-  "publisher": "gemini-flow",
-  "name": "gemini-flow-pack",
+  "name": "@workflow-pack/cli",
   "version": "0.1.0",
-  "description": "Workflow Pack extension for Gemini CLI",
-  "commands": [
-    {
-      "name": "pack list",
-      "description": "List available workflows",
-      "executable": "dist/gemini_ext/commands.js",
-      "arguments": ["list"]
-    },
-    {
-      "name": "pack run",
-      "description": "Run a workflow",
-      "executable": "dist/gemini_ext/commands.js",
-      "arguments": ["run"]
-    }
+  "bin": {
+    "workflow-pack": "./dist/index.js"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@workflow-pack/foundation": "workspace:*",
+    "@workflow-pack/workflow": "workspace:*",
+    "@workflow-pack/registry": "workspace:*",
+    "@workflow-pack/runner": "workspace:*",
+    "@workflow-pack/workflows": "workspace:*",
+    "commander": "^11.0.0",
+    "chalk": "^4.1.2",
+    "ora": "^5.4.1",
+    "cli-table3": "^0.6.3"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/node": "^20.0.0"
+  }
+}
+```
+
+packages/cli/tsconfig.json
+```
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src"
+  },
+  "include": ["src/**/*"],
+  "references": [
+    { "path": "../foundation" },
+    { "path": "../workflow" },
+    { "path": "../registry" },
+    { "path": "../runner" },
+    { "path": "../workflows" }
   ]
 }
 ```
 
-src/git/index.ts
+packages/foundation/package.json
 ```
-import { exec, ExecOptions } from 'child_process';
-import util from 'util';
-
-const execAsync = util.promisify(exec);
-
-const MAX_BUFFER = 10 * 1024 * 1024; // 10MB
-
-export async function execGit(command: string, options: ExecOptions = {}): Promise<string> {
-  try {
-    const { stdout } = await execAsync(`git ${command}`, {
-      maxBuffer: MAX_BUFFER,
-      ...options
-    });
-    return (typeof stdout === 'string' ? stdout : stdout.toString()).trim();
-  } catch (error: any) {
-    throw new Error(`Git command failed: git ${command}\n${error.message}`);
-  }
-}
-
-export async function getCommitLog(count: number = 10): Promise<string> {
-  // Format: "hash|author|date|message"
-  const format = '%h|%an|%ad|%s';
-  return execGit(`log -n ${count} --pretty=format:"${format}"`);
-}
-
-export async function getStagedDiff(): Promise<string> {
-  return execGit('diff --cached');
-}
-
-export async function getRangeDiff(base: string, head: string): Promise<string> {
-  return execGit(`diff ${base}..${head}`);
-}
-```
-
-src/github/index.ts
-```
-import { exec } from 'child_process';
-import util from 'util';
-
-const execAsync = util.promisify(exec);
-
-export interface PullRequest {
-  number: number;
-  title: string;
-  body: string;
-  baseRefName: string;
-  headRefName: string;
-  headRefOid: string;
-}
-
-export type ReviewEvent = 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT';
-
-async function execGh(command: string): Promise<string> {
-  try {
-    const { stdout } = await execAsync(`gh ${command}`);
-    return stdout.trim();
-  } catch (error: any) {
-    throw new Error(`GitHub CLI command failed: gh ${command}\n${error.message}`);
-  }
-}
-
-export async function checkAuth(): Promise<boolean> {
-  try {
-    await execGh('auth status');
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-export async function viewPr(prNumber: number): Promise<PullRequest> {
-  const output = await execGh(`pr view ${prNumber} --json number,title,body,baseRefName,headRefName,headRefOid`);
-  return JSON.parse(output);
-}
-
-export async function diffPr(prNumber: number): Promise<string> {
-  return execGh(`pr diff ${prNumber}`);
-}
-
-export async function submitReview(prNumber: number, body: string, event: ReviewEvent): Promise<void> {
-  let flag = '--comment';
-  if (event === 'APPROVE') flag = '--approve';
-  if (event === 'REQUEST_CHANGES') flag = '--request-changes';
-
-  // Escaping quotes for shell
-  const escapedBody = body.replace(/"/g, '\\"');
-  await execGh(`pr review ${prNumber} ${flag} --body "${escapedBody}"`);
-}
-```
-
-src/install/hooks.ts
-```
-import fs from 'fs/promises';
-import path from 'path';
-
-export async function installPreCommitHook(): Promise<void> {
-  const gitHooksDir = path.join(process.cwd(), '.git', 'hooks');
-  const hookPath = path.join(gitHooksDir, 'pre-commit');
-
-  // The hook script invokes our pre-commit.ts runner via tsx (or node if compiled)
-  // For development/MVP, we'll assume tsx is available or use a relative path to node_modules/.bin/tsx
-  const hookContent = `#!/bin/sh
-# Cline Workflow Pack: Pre-commit Risk Gate
-npx tsx pack/scripts/pre-commit.ts
-`;
-
-  try {
-    await fs.mkdir(gitHooksDir, { recursive: true });
-    await fs.writeFile(hookPath, hookContent, { mode: 0o755 });
-    console.log(`✅ Pre-commit hook installed to ${hookPath}`);
-  } catch (error: any) {
-    throw new Error(`Failed to install pre-commit hook: ${error.message}`);
-  }
-}
-```
-
-src/install/index.ts
-```
-import fs from 'fs/promises';
-import path from 'path';
-import { installPreCommitHook } from './hooks';
-
-export interface InstallAction {
-  source: string;
-  target: string;
-  action: 'create' | 'overwrite' | 'skip';
-}
-
-export async function computePlan(targetDir: string): Promise<InstallAction[]> {
-  const packDir = path.join(__dirname, '../../pack');
-  const plan: InstallAction[] = [];
-
-  // Workflows
-  const workflowSrc = path.join(packDir, 'workflows');
-  const workflowDest = path.join(targetDir, '.clinerules/workflows');
-  
-  const workflowFiles = await fs.readdir(workflowSrc).catch(() => []);
-  for (const file of workflowFiles) {
-    const destPath = path.join(workflowDest, file);
-    const exists = await fs.access(destPath).then(() => true).catch(() => false);
-    plan.push({
-      source: path.join(workflowSrc, file),
-      target: destPath,
-      action: exists ? 'overwrite' : 'create' // Default policy
-    });
-  }
-
-  // Scripts
-  const scriptSrc = path.join(packDir, 'scripts');
-  const scriptDest = path.join(targetDir, 'scripts/cline');
-  
-  const scriptFiles = await fs.readdir(scriptSrc).catch(() => []);
-  for (const file of scriptFiles) {
-    const destPath = path.join(scriptDest, file);
-    const exists = await fs.access(destPath).then(() => true).catch(() => false);
-    plan.push({
-      source: path.join(scriptSrc, file),
-      target: destPath,
-      action: exists ? 'overwrite' : 'create'
-    });
-  }
-
-  return plan;
-}
-
-export async function installPack(targetDir: string, options: { overwrite?: boolean } = {}): Promise<void> {
-  const plan = await computePlan(targetDir);
-
-  for (const item of plan) {
-    if (item.action === 'skip') continue;
-    if (item.action === 'overwrite' && options.overwrite === false) {
-      console.log(`⏭️ Skipping existing file: ${path.relative(targetDir, item.target)}`);
-      continue;
+{
+  "name": "@workflow-pack/foundation",
+  "version": "0.1.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
     }
-
-    await fs.mkdir(path.dirname(item.target), { recursive: true });
-    await fs.copyFile(item.source, item.target);
-    console.log(`✅ ${item.action === 'create' ? 'Created' : 'Updated'}: ${path.relative(targetDir, item.target)}`);
-  }
-
-  // Install Git Hook
-  await installPreCommitHook();
-}
-```
-
-src/manifest/index.ts
-```
-import { WorkflowInfo, WorkflowRegistry } from './types';
-
-const MVP_REGISTRY: WorkflowRegistry = {
-  'pr-review': {
-    id: 'pr-review',
-    name: 'PR Review',
-    description: 'Analyzes PR diffs and provides a pass/fail verdict with feedback.',
-    mode: 'headless',
-    inputs: [
-      { name: 'prNumber', type: 'number', description: 'The Pull Request number', required: true }
-    ],
-    outputs: [
-      { name: 'verdict', type: 'string', description: 'PASS or FAIL' },
-      { name: 'report', type: 'string', description: 'Path to the review report artifact' }
-    ]
   },
-  'changelog': {
-    id: 'changelog',
-    name: 'Daily Changelog',
-    description: 'Summarizes recent commits into a changelog entry.',
-    mode: 'headless',
-    inputs: [
-      { name: 'since', type: 'string', description: 'Git revision or date to start from', required: false },
-      { name: 'output', type: 'string', description: 'Output file path', required: false, defaultValue: 'CHANGELOG.md' }
-    ],
-    outputs: [
-      { name: 'summary', type: 'string', description: 'The generated changelog text' }
-    ]
+  "scripts": {
+    "build": "tsc",
+    "test": "jest"
   },
-  'pre-commit': {
-    id: 'pre-commit',
-    name: 'Pre-commit Risk Gate',
-    description: 'Blocks risky changes before commit.',
-    mode: 'headless',
-    inputs: [],
-    outputs: [
-      { name: 'status', type: 'string', description: 'ALLOW or BLOCK' }
-    ]
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}
+```
+
+packages/foundation/tsconfig.json
+```
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "composite": true
   },
-  'lint-sweep': {
-    id: 'lint-sweep',
-    name: 'Lint Sweep & Auto-Fix',
-    description: 'Runs linters and attempts to fix errors using AI.',
-    mode: 'headless',
-    inputs: [
-      { name: 'command', type: 'string', description: 'Lint command to run', required: true }
-    ],
-    outputs: [
-      { name: 'fixedFiles', type: 'string', description: 'List of fixed files' }
-    ]
-  }
-};
-
-export async function loadManifest(): Promise<WorkflowRegistry> {
-  // In the future, this could load from a file. For now, return the static registry.
-  return MVP_REGISTRY;
-}
-
-export function listWorkflows(): WorkflowInfo[] {
-  return Object.values(MVP_REGISTRY);
-}
-
-export function getWorkflow(id: string): WorkflowInfo | undefined {
-  return MVP_REGISTRY[id];
+  "include": ["src/**/*"]
 }
 ```
 
-src/manifest/types.ts
+packages/integrations/package.json
 ```
-export type WorkflowMode = 'headless' | 'interactive';
-
-export interface WorkflowInput {
-  name: string;
-  type: 'string' | 'boolean' | 'number';
-  description: string;
-  required: boolean;
-  defaultValue?: any;
-}
-
-export interface WorkflowOutput {
-  name: string;
-  type: string;
-  description: string;
-}
-
-export interface WorkflowPrerequisites {
-  tools?: string[];
-  env?: string[];
-}
-
-export interface WorkflowInfo {
-  id: string;
-  name: string;
-  description: string;
-  mode: WorkflowMode;
-  prerequisites?: WorkflowPrerequisites;
-  inputs: WorkflowInput[];
-  outputs: WorkflowOutput[];
-  // Path to the workflow definition file (e.g., relative to pack root)
-  definitionPath?: string;
-}
-
-export type WorkflowRegistry = Record<string, WorkflowInfo>;
-```
-
-src/mcp/server.ts
-```
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import {
-  ListToolsRequestSchema,
-  CallToolRequestSchema,
-} from '@modelcontextprotocol/sdk/types.js';
-import { handleListWorkflows, handleRunWorkflow, handleInstallPack, ListWorkflowsSchema, RunWorkflowSchema, InstallPackSchema } from './tools';
-import { zodToJsonSchema } from 'zod-to-json-schema';
-
-export interface ServerConfig {
-  name?: string;
-  version?: string;
-}
-
-export class McpServer {
-  private server: Server;
-
-  constructor(config: ServerConfig = {}) {
-    this.server = new Server(
-      {
-        name: config.name || 'gemini-flow-mcp',
-        version: config.version || '0.1.0',
-      },
-      {
-        capabilities: {
-          tools: {},
-        },
-      }
-    );
-
-    this.setupHandlers();
-  }
-
-  private setupHandlers() {
-    this.server.setRequestHandler(ListToolsRequestSchema, async () => {
-      return {
-        tools: [
-          {
-            name: 'list_workflows',
-            description: 'List available workflows',
-            inputSchema: zodToJsonSchema(ListWorkflowsSchema as any) as any,
-          },
-          {
-            name: 'run_workflow',
-            description: 'Run a specific workflow',
-            inputSchema: zodToJsonSchema(RunWorkflowSchema as any) as any,
-          },
-          {
-            name: 'install_pack',
-            description: 'Install workflow pack',
-            inputSchema: zodToJsonSchema(InstallPackSchema as any) as any,
-          }
-        ],
-      };
-    });
-
-    this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
-      switch (request.params.name) {
-        case 'list_workflows':
-          const listResult = await handleListWorkflows(request.params.arguments);
-          return {
-            content: [{ type: 'text', text: JSON.stringify(listResult, null, 2) }],
-          };
-        case 'run_workflow':
-            const runArgs = RunWorkflowSchema.parse(request.params.arguments);
-            const runResult = await handleRunWorkflow(runArgs);
-            return {
-                content: [{ type: 'text', text: JSON.stringify(runResult, null, 2) }]
-            };
-        case 'install_pack':
-            const installArgs = InstallPackSchema.parse(request.params.arguments);
-            const installResult = await handleInstallPack(installArgs);
-            return {
-                content: [{ type: 'text', text: JSON.stringify(installResult, null, 2) }]
-            };
-        default:
-          throw new Error(`Tool not found: ${request.params.name}`);
-      }
-    });
-  }
-
-  async start() {
-    const transport = new StdioServerTransport();
-    await this.server.connect(transport);
-    console.error('MCP Server started on stdio');
+{
+  "name": "@workflow-pack/integrations",
+  "version": "0.1.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@workflow-pack/foundation": "workspace:*",
+    "execa": "^5.1.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/node": "^20.0.0"
   }
 }
+```
 
-export async function startServer(config?: ServerConfig) {
-  const server = new McpServer(config);
-  await server.start();
-}
-
-if (require.main === module) {
-  startServer().catch((err) => {
-    console.error('Fatal error running server:', err);
-    process.exit(1);
-  });
+packages/integrations/tsconfig.json
+```
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "composite": true
+  },
+  "include": ["src/**/*"],
+  "references": [
+    { "path": "../foundation" }
+  ]
 }
 ```
 
-src/mcp/tools.ts
+packages/mcp-server/package.json
 ```
-import { z } from 'zod';
-import { listWorkflows, loadManifest } from '../manifest/index';
-import { executeCommand } from '../utils/exec';
-import { getWorkflow } from '../manifest/index';
-import { parseVerdict, Verdict } from '../gating/verdict';
-import path from 'path';
+{
+  "name": "@workflow-pack/mcp-server",
+  "version": "0.1.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "workflow-mcp": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@workflow-pack/foundation": "workspace:*",
+    "@workflow-pack/workflow": "workspace:*",
+    "@workflow-pack/registry": "workspace:*",
+    "@workflow-pack/runner": "workspace:*",
+    "@workflow-pack/workflows": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/node": "^20.0.0"
+  }
+}
+```
+
+packages/mcp-server/tsconfig.json
+```
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "composite": true
+  },
+  "include": ["src/**/*"],
+  "references": [
+    { "path": "../foundation" },
+    { "path": "../workflow" },
+    { "path": "../registry" },
+    { "path": "../runner" },
+    { "path": "../workflows" }
+  ]
+}
+```
+
+packages/runner/package.json
+```
+{
+  "name": "@workflow-pack/runner",
+  "version": "0.1.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@workflow-pack/foundation": "workspace:*",
+    "@workflow-pack/workflow": "workspace:*",
+    "safe-eval": "^0.4.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/node": "^20.0.0"
+  }
+}
+```
+
+packages/runner/tsconfig.json
+```
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "composite": true
+  },
+  "include": ["src/**/*"],
+  "references": [
+    { "path": "../foundation" },
+    { "path": "../workflow" }
+  ]
+}
+```
+
+packages/registry/package.json
+```
+{
+  "name": "@workflow-pack/registry",
+  "version": "0.1.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@workflow-pack/foundation": "workspace:*",
+    "@workflow-pack/workflow": "workspace:*",
+    "fast-glob": "^3.3.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/node": "^20.0.0"
+  }
+}
+```
+
+packages/registry/tsconfig.json
+```
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "composite": true
+  },
+  "include": ["src/**/*"],
+  "references": [
+    { "path": "../foundation" },
+    { "path": "../workflow" }
+  ]
+}
+```
+
+packages/workflow/package.json
+```
+{
+  "name": "@workflow-pack/workflow",
+  "version": "0.1.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@workflow-pack/foundation": "workspace:*",
+    "zod": "^3.0.0",
+    "js-yaml": "^4.1.0",
+    "semver": "^7.5.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/js-yaml": "^4.0.0",
+    "@types/semver": "^7.5.0"
+  }
+}
+```
+
+packages/workflow/tsconfig.json
+```
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "composite": true
+  },
+  "include": ["src/**/*"],
+  "references": [
+    { "path": "../foundation" }
+  ]
+}
+```
+
+packages/workflows/package.json
+```
+{
+  "name": "@workflow-pack/workflows",
+  "version": "0.1.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@workflow-pack/foundation": "workspace:*",
+    "@workflow-pack/workflow": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/node": "^20.0.0"
+  }
+}
+```
+
+packages/workflows/tsconfig.json
+```
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "composite": true
+  },
+  "include": ["src/**/*"],
+  "references": [
+    { "path": "../foundation" },
+    { "path": "../workflow" }
+  ]
+}
+```
+
+packages/cli/src/index.ts
+```
+#!/usr/bin/env node
+import { Command } from 'commander';
+import { WorkflowRegistry } from '@workflow-pack/registry';
+import { workflows as builtInWorkflows } from '@workflow-pack/workflows';
+import { makeListCommand } from './commands/list';
+import { makeRunCommand } from './commands/run';
+import { Logger } from '@workflow-pack/foundation';
 import fs from 'fs/promises';
-import { copyFile, renderTemplate } from '../utils/file-ops';
+import path from 'path';
 
-export const ListWorkflowsSchema = z.object({});
+async function main() {
+  const logger = new Logger();
+  const registry = new WorkflowRegistry(logger);
 
-export const RunWorkflowSchema = z.object({
-  workflow_id: z.string(),
-  inputs: z.record(z.string(), z.any()).optional(),
-  mode: z.enum(['headless', 'interactive']).optional(),
-  artifactDir: z.string().optional(),
+  // 1. Initialize registry with local workflows from .clinerules/workflows
+  const localDir = path.join(process.cwd(), '.clinerules', 'workflows');
+  const localDirs = [];
+  try {
+    await fs.access(localDir);
+    localDirs.push(localDir);
+  } catch {}
+
+  await registry.initialize(localDirs, []);
+
+  // 2. Register built-in workflows from the workflows package
+  for (const wf of builtInWorkflows) {
+    registry.registerWorkflow(wf, 'installed');
+  }
+
+  // 3. Setup CLI
+  const program = new Command();
+  program
+    .name('workflow-pack')
+    .description('A host-agnostic workflow execution tool')
+    .version('0.1.0');
+
+  program.addCommand(makeListCommand(registry));
+  program.addCommand(makeRunCommand(registry));
+
+  await program.parseAsync(process.argv);
+}
+
+main().catch(err => {
+  console.error(err);
+  process.exit(1);
 });
+```
 
-export const InstallPackSchema = z.object({
-  targetPath: z.string(),
-  selection: z.array(z.string()).optional(), // specific files or 'all'
-  overwritePolicy: z.enum(['overwrite', 'skip', 'abort']).default('skip'),
-});
+packages/foundation/src/config.ts
+```
+export interface Config {
+  jsonLogs?: boolean;
+  verbose?: boolean;
+  workdir?: string;
+  env?: Record<string, string>;
+  secrets?: string[]; // Keys to treat as secrets
+}
+
+// Strategy Question 7: Redaction logic
+// We'll use a robust redaction strategy that checks for known secret keys AND patterns.
+
+const DEFAULT_SECRET_KEYS = ['API_KEY', 'TOKEN', 'SECRET', 'PASSWORD', 'AUTH', 'CREDENTIALS'];
+
+export function redactSensitive(obj: unknown, additionalSecrets: string[] = []): unknown {
+  if (typeof obj !== 'object' || obj === null) {
+    return obj;
+  }
+
+  if (Array.isArray(obj)) {
+    return obj.map(item => redactSensitive(item, additionalSecrets));
+  }
+
+  const result: Record<string, unknown> = {};
+  const secretKeys = [...DEFAULT_SECRET_KEYS, ...additionalSecrets].map(k => k.toUpperCase());
+
+  for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
+    const upperKey = key.toUpperCase();
+    const isSecret = secretKeys.some(secret => upperKey.includes(secret));
+
+    if (isSecret && typeof value === 'string') {
+      result[key] = '********';
+    } else if (typeof value === 'object' && value !== null) {
+      result[key] = redactSensitive(value, additionalSecrets);
+    } else {
+      result[key] = value;
+    }
+  }
+
+  return result;
+}
+
+export async function loadConfig(overrides?: Partial<Config>): Promise<Config> {
+  // 1. Defaults
+  const defaults: Config = {
+    jsonLogs: process.env.JSON_LOGS === 'true',
+    verbose: false,
+    workdir: process.cwd(),
+    env: {},
+    secrets: []
+  };
+
+  // 2. Load file (Mock implementation for now - normally would use cosmiconfig or fs)
+  // const fileConfig = await loadFileConfig(); 
+  const fileConfig = {}; 
+
+  // 3. Env vars (Mapped manually or via pattern)
+  const envConfig: Partial<Config> = {};
+  if (process.env.WORKFLOW_VERBOSE) envConfig.verbose = process.env.WORKFLOW_VERBOSE === 'true';
+
+  // 4. Overrides (CLI args)
+  return {
+    ...defaults,
+    ...fileConfig,
+    ...envConfig,
+    ...overrides,
+  };
+}
+```
+
+packages/foundation/src/errors.ts
+```
+export class PackError extends Error {
+  constructor(message: string, public readonly code: string) {
+    super(message);
+    this.name = this.constructor.name;
+  }
+}
+
+export class ValidationError extends PackError {
+  constructor(message: string, public readonly context?: Record<string, unknown>) {
+    super(message, "VALIDATION_ERROR");
+  }
+}
+
+export class PrereqMissingError extends PackError {
+  constructor(public readonly toolName: string, public readonly fixHint: string) {
+    super(`Missing prerequisite: ${toolName}. ${fixHint}`, "PREREQ_MISSING");
+  }
+}
+
+export class ExecutionError extends PackError {
+  constructor(message: string, public readonly exitCode: number, public readonly stepId?: string) {
+    super(message, "EXECUTION_ERROR");
+  }
+}
+
+// Strategy Question 12: Distinct codes for integrations
+export class GitError extends ExecutionError {
+  constructor(message: string) {
+    super(message, 128); // Standard git error code often related to arguments or state
+    this.name = "GitError";
+  }
+}
+
+export class GhError extends ExecutionError {
+  constructor(message: string) {
+    super(message, 70); // EX_SOFTWARE or similar
+    this.name = "GhError";
+  }
+}
+
+export function getExitCode(error: unknown): number {
+  if (error instanceof ExecutionError) {
+    return error.exitCode;
+  }
+  if (error instanceof ValidationError) {
+    return 2; // Usage/Data error
+  }
+  if (error instanceof PrereqMissingError) {
+    return 69; // EX_UNAVAILABLE
+  }
+  if (error instanceof PackError) {
+    return 1;
+  }
+  return 1; // Generic error
+}
+```
+
+packages/foundation/src/index.ts
+```
+export * from './types';
+export * from './errors';
+export * from './config';
+export * from './logging';
+```
+
+packages/foundation/src/logging.ts
+```
+import { randomUUID } from 'crypto';
+
+export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+
+export interface LogEntry {
+  timestamp: string;
+  level: LogLevel;
+  correlationId: string;
+  message: string;
+  context?: Record<string, unknown>;
+}
+
+export class Logger {
+  private correlationId: string;
+
+  constructor(correlationId?: string) {
+    this.correlationId = correlationId || randomUUID();
+  }
+
+  // Strategy Question 4: Ensure correlationId persists
+  public getCorrelationId(): string {
+    return this.correlationId;
+  }
+
+  public child(): Logger {
+    return new Logger(this.correlationId);
+  }
+
+  private log(level: LogLevel, message: string, context?: Record<string, unknown>) {
+    if (process.env.JSON_LOGS === 'true') {
+      const entry: LogEntry = {
+        timestamp: new Date().toISOString(),
+        level,
+        correlationId: this.correlationId,
+        message,
+        context
+      };
+      console.log(JSON.stringify(entry));
+    } else {
+      const time = new Date().toISOString();
+      const ctxStr = context ? JSON.stringify(context) : '';
+      console.log(`[${time}] ${level.toUpperCase()} [${this.correlationId}]: ${message} ${ctxStr}`);
+    }
+  }
+
+  public debug(message: string, context?: Record<string, unknown>) {
+    this.log('debug', message, context);
+  }
+
+  public info(message: string, context?: Record<string, unknown>) {
+    this.log('info', message, context);
+  }
+
+  public warn(message: string, context?: Record<string, unknown>) {
+    this.log('warn', message, context);
+  }
+
+  public error(message: string, context?: Record<string, unknown>) {
+    this.log('error', message, context);
+  }
+}
+```
+
+packages/foundation/src/types.ts
+```
+export enum HostKind {
+  CLI = "CLI",
+  MCP = "MCP",
+  GEMINI_EXTENSION = "GEMINI_EXTENSION",
+  LM_STUDIO = "LM_STUDIO"
+}
+
+export enum Severity {
+  Info = "info",
+  Warning = "warning",
+  Error = "error"
+}
+
+export interface StepResult {
+  stepId: string;
+  status: "success" | "failure" | "skipped" | "cancelled";
+  exitCode?: number;
+  stdout?: string;
+  stderr?: string;
+  artifacts?: string[];
+  error?: Error;
+}
 
 export interface RunResult {
+  runId: string;
   workflowId: string;
-  status: 'success' | 'failure';
-  verdict?: Verdict;
-  output: string;
+  status: "success" | "failure" | "cancelled";
+  startedAt: Date;
+  finishedAt?: Date;
+  steps: StepResult[];
   artifacts: string[];
+  warnings: string[];
 }
 
-export interface InstallReport {
-  status: 'success' | 'failure';
-  actions: { file: string; action: 'created' | 'overwritten' | 'skipped' | 'error' }[];
-  summary: string;
+export type StepType = "shell" | "ai" | "gate";
+
+export interface BaseStep {
+  id: string;
+  name: string;
+  type: StepType;
+  if?: string; // Condition expression
+  timeout?: number; // Milliseconds
 }
 
-export async function handleListWorkflows(args: any) {
-  // Ensure manifest is loaded (if dynamic)
-  await loadManifest();
-  return listWorkflows();
+export interface ShellStep extends BaseStep {
+  type: "shell";
+  command: string;
+  cwd?: string;
+  env?: Record<string, string>;
+  dryRun?: boolean; // Added based on Strategy Question 13
 }
 
-export async function handleRunWorkflow(args: z.infer<typeof RunWorkflowSchema>): Promise<RunResult> {
-  const workflow = getWorkflow(args.workflow_id);
-  if (!workflow) {
-    throw new Error(`Workflow not found: ${args.workflow_id}`);
+export interface AiStep extends BaseStep {
+  type: "ai";
+  prompt: string;
+  model?: string;
+  contextFiles?: string[];
+  outputSchema?: Record<string, unknown>; // JSON Schema
+}
+
+export interface GateStep extends BaseStep {
+  type: "gate";
+  message: string;
+  autoApprove?: boolean;
+  requiredApprovals?: number; // Added based on Strategy Question 15
+}
+
+export type Step = ShellStep | AiStep | GateStep;
+
+export interface Workflow {
+  id: string;
+  name: string;
+  version: string;
+  description?: string;
+  params?: Record<string, { type: string; description?: string; default?: unknown }>;
+  steps: Step[];
+  outputs?: Record<string, string>;
+}
+```
+
+packages/foundation/tests/foundation.test.ts
+```
+import { redactSensitive } from '../src/config';
+import { Logger } from '../src/logging';
+import { getExitCode, ValidationError, PrereqMissingError } from '../src/errors';
+
+describe('Foundation Layer', () => {
+  describe('Config Redaction', () => {
+    it('should redact sensitive keys', () => {
+      const config = {
+        api_key: 'secret123',
+        database_password: 'pass',
+        normal_key: 'public'
+      };
+      const redacted: any = redactSensitive(config);
+      expect(redacted.api_key).toBe('********');
+      expect(redacted.database_password).toBe('********');
+      expect(redacted.normal_key).toBe('public');
+    });
+
+    it('should redact custom secret keys', () => {
+      const config = { my_token: 'abc' };
+      const redacted: any = redactSensitive(config, ['MY_TOKEN']);
+      expect(redacted.my_token).toBe('********');
+    });
+  });
+
+  describe('Logging', () => {
+    it('should maintain correlationId across child loggers', () => {
+      const logger = new Logger();
+      const child = logger.child();
+      expect(child.getCorrelationId()).toBe(logger.getCorrelationId());
+    });
+  });
+
+  describe('Errors', () => {
+    it('should map errors to correct exit codes', () => {
+      expect(getExitCode(new ValidationError('fail'))).toBe(2);
+      expect(getExitCode(new PrereqMissingError('tool', 'hint'))).toBe(69);
+      expect(getExitCode(new Error('unknown'))).toBe(1);
+    });
+  });
+});
+```
+
+packages/integrations/src/git.ts
+```
+import execa from 'execa';
+import { GitError } from '@workflow-pack/foundation';
+
+export class Git {
+  constructor(private cwd: string = process.cwd()) {}
+
+  private async exec(args: string[]): Promise<string> {
+    try {
+      // Q5: Handle interactive prompts by ignoring stdin or setting specific env vars
+      // We set GPG_TTY to empty to force non-interactive mode if possible, or just rely on stdio ignore
+      const { stdout } = await execa('git', args, {
+        cwd: this.cwd,
+        env: { ...process.env, GPG_TTY: '' },
+        stdio: ['ignore', 'pipe', 'pipe']
+      });
+      return stdout;
+    } catch (error: any) {
+      throw new GitError(error.message);
+    }
   }
 
-  const command = `node`;
-  const scriptPath = `scripts/cline/${args.workflow_id}.js`; // Convention
+  async diff(target: string = 'HEAD'): Promise<string> {
+    return this.exec(['diff', target]);
+  }
+
+  async status(): Promise<string> {
+    return this.exec(['status', '--porcelain']);
+  }
+
+  async statusRaw(): Promise<string> {
+    return this.exec(['status']);
+  }
+
+  async show(target: string): Promise<string> {
+    return this.exec(['show', target]);
+  }
+}
+```
+
+packages/integrations/src/github.ts
+```
+import execa from 'execa';
+import { GhError, PrereqMissingError } from '@workflow-pack/foundation';
+
+export class GitHub {
+  constructor(private cwd: string = process.cwd()) {}
+
+  private async checkBinary() {
+    try {
+      await execa('gh', ['--version']);
+    } catch {
+      throw new PrereqMissingError('gh', 'Please install GitHub CLI.');
+    }
+  }
+
+  private async exec(args: string[]): Promise<any> {
+    await this.checkBinary();
+    try {
+      const { stdout } = await execa('gh', args, {
+        cwd: this.cwd
+      });
+      try {
+        return JSON.parse(stdout);
+      } catch {
+        return stdout;
+      }
+    } catch (error: any) {
+      throw new GhError(error.message);
+    }
+  }
+
+  async getPr(prId: string) {
+    return this.exec(['pr', 'view', prId, '--json', 'title,body,number,state,url']);
+  }
+
+  async listPrs() {
+    return this.exec(['pr', 'list', '--json', 'title,body,number,state,url']);
+  }
   
-  const cliArgs = [scriptPath];
-  if (args.inputs) {
-      cliArgs.push('--inputs', JSON.stringify(args.inputs));
+  async diff(prId: string) {
+      return this.exec(['pr', 'diff', prId]);
   }
+}
+```
 
-  try {
-    const result = await executeCommand(command, cliArgs);
-    
-    let verdict: Verdict | undefined;
-    if (workflow.outputs.some(o => o.name === 'verdict' || o.name === 'status')) {
-        verdict = parseVerdict(result.stdout);
+packages/integrations/src/index.ts
+```
+export * from './git';
+export * from './github';
+export * from './test-runner';
+export * from './linter';
+```
+
+packages/integrations/src/linter.ts
+```
+import execa from 'execa';
+
+export class Linter {
+  constructor(private cwd: string = process.cwd()) {}
+
+  async run(checkCommand: string, fixCommand?: string): Promise<{ fixed: boolean; output: string }> {
+    let fixed = false;
+    let output = '';
+
+    if (fixCommand) {
+      try {
+        const result = await execa.command(fixCommand, { cwd: this.cwd });
+        output += result.stdout;
+        fixed = true;
+      } catch (e: any) {
+        output += e.stdout || e.message;
+      }
     }
 
-    return {
-      workflowId: args.workflow_id,
-      status: result.exitCode === 0 ? 'success' : 'failure',
-      verdict,
-      output: result.stdout + (result.stderr ? `\nSTDERR:\n${result.stderr}` : ''),
-      artifacts: args.artifactDir ? [] : [], // Would list files in artifactDir
-    };
+    try {
+      const result = await execa.command(checkCommand, { cwd: this.cwd });
+      output += result.stdout;
+      return { fixed, output };
+    } catch (e: any) {
+      output += e.stdout || e.message;
+      throw new Error(`Lint check failed:
+${output}`);
+    }
+  }
+}
+```
 
-  } catch (error: any) {
+packages/integrations/src/test-runner.ts
+```
+import execa from 'execa';
+import { ExecutionError } from '@workflow-pack/foundation'
+
+export class TestRunner {
+  constructor(private cwd: string = process.cwd()) {}
+
+  async run(command: string): Promise<{ success: boolean; output: string; failures: string[] }> {
+    try {
+      const { stdout } = await execa.command(command, { cwd: this.cwd });
+      return { success: true, output: stdout, failures: [] };
+    } catch (error: any) {
+      const output = error.stdout || error.stderr || error.message;
+      const failures = this.parseFailures(output);
+      return { success: false, output, failures };
+    }
+  }
+
+  private parseFailures(output: string): string[] {
+    // Simple parsing logic: match lines starting with "FAIL" or "Error:"
+    const lines = output.split('\n');
+    return lines.filter(line => 
+      line.includes('FAIL') || 
+      line.includes('Error:') || 
+      line.includes('failed')
+    ).map(l => l.trim());
+  }
+}
+```
+
+packages/integrations/tests/integrations.test.ts
+```
+import { Git } from '../src/git';
+import { GitHub } from '../src/github';
+import { TestRunner } from '../src/test-runner';
+import { Linter } from '../src/linter';
+import { GitError, GhError, PrereqMissingError } from '@workflow-pack/foundation'
+import execa from 'execa';
+
+jest.mock('execa');
+
+describe('Integrations', () => {
+  describe('Git', () => {
+    it('should run status', async () => {
+      (execa as any).mockResolvedValue({ stdout: 'M file.ts' });
+      const git = new Git();
+      const status = await git.status();
+      expect(status).toBe('M file.ts');
+    });
+
+    it('should throw GitError', async () => {
+      (execa as any).mockRejectedValue(new Error('fatal: not a git repository'));
+      const git = new Git();
+      await expect(git.status()).rejects.toThrow(GitError);
+    });
+  });
+
+  describe('GitHub', () => {
+    it('should list PRs', async () => {
+      // Mocking execa for the sequence of calls
+      // 1. checkBinary (execa('gh', ['--version']))
+      // 2. listPrs (execa('gh', ['pr', 'list', ...]))
+      
+      // execa is mocked as a function (default export)
+      (execa as unknown as jest.Mock)
+        .mockResolvedValueOnce({ stdout: 'gh version 2.0.0' }) // for checkBinary
+        .mockResolvedValueOnce({ stdout: '[{"number":1, "title": "test"}]' }); // for listPrs
+
+      const gh = new GitHub();
+      const prs = await gh.listPrs();
+      expect(prs[0].number).toBe(1);
+    });
+
+    it('should fail if binary missing', async () => {
+      (execa as unknown as jest.Mock).mockRejectedValue(new Error('ENOENT'));
+      const gh = new GitHub();
+      await expect(gh.listPrs()).rejects.toThrow(PrereqMissingError);
+    });
+  });
+
+  describe('TestRunner', () => {
+    it('should parse failures', async () => {
+      // execa.command is a separate function property
+      (execa.command as jest.Mock).mockRejectedValue({ stdout: 'FAIL test.ts\nError: something broke' });
+      const runner = new TestRunner();
+      const result = await runner.run('npm test');
+      expect(result.success).toBe(false);
+      expect(result.failures).toContain('FAIL test.ts');
+    });
+  });
+
+  describe('Linter', () => {
+    it('should attempt fix', async () => {
+      (execa.command as jest.Mock).mockResolvedValue({ stdout: 'fixed' });
+      const linter = new Linter();
+      const result = await linter.run('lint', 'lint --fix');
+      expect(result.fixed).toBe(true);
+    });
+  });
+});
+```
+
+packages/runner/src/context.ts
+```
+import { Logger } from '@workflow-pack/foundation';
+import { redactSensitive } from '@workflow-pack/foundation';
+
+export interface ContextData {
+  vars: Record<string, any>;
+  outputs: Record<string, any>;
+  env: Record<string, string>;
+  secrets: string[];
+}
+
+export class ExecutionContext {
+  private vars: Record<string, any> = {};
+  private outputs: Record<string, any> = {};
+  private secrets: string[] = [];
+
+  constructor(
+    private readonly logger: Logger,
+    private readonly env: Record<string, string> = {},
+    initialVars: Record<string, any> = {},
+    secrets: string[] = []
+  ) {
+    this.vars = { ...initialVars };
+    this.secrets = [...secrets];
+  }
+
+  // Q3: Host hooks isolation - methods to run hooks shouldn't expose 'this' directly or allow overwrite
+  // For now, we just expose safe accessors
+
+  public get(key: string): any {
+    return this.vars[key] ?? this.outputs[key] ?? this.env[key];
+  }
+
+  public setVar(key: string, value: any) {
+    this.vars[key] = value;
+  }
+
+  public setOutput(stepId: string, output: any) {
+    this.outputs[stepId] = output;
+  }
+
+  public getLogger(): Logger {
+    return this.logger;
+  }
+
+  public getSnapshot(): ContextData {
     return {
-      workflowId: args.workflow_id,
-      status: 'failure',
-      output: `Execution failed: ${error.message}`,
-      artifacts: [],
+      vars: { ...this.vars },
+      outputs: { ...this.outputs },
+      env: { ...this.env }, // Should be careful with env serialization if it's huge
+      secrets: [...this.secrets]
     };
+  }
+
+  // Q14: Serialization for resumability
+  public serialize(): string {
+    const snapshot = this.getSnapshot();
+    // Redact sensitive data before serialization? 
+    // Usually state file should be encrypted or secure. 
+    // For now we serialize as is, assuming secure storage.
+    return JSON.stringify(snapshot);
+  }
+
+  public static deserialize(json: string, logger: Logger): ExecutionContext {
+    const data: ContextData = JSON.parse(json);
+    const ctx = new ExecutionContext(logger, data.env, data.vars, data.secrets);
+    ctx.outputs = data.outputs;
+    return ctx;
   }
 }
 
-export async function handleInstallPack(args: z.infer<typeof InstallPackSchema>): Promise<InstallReport> {
-    const report: InstallReport = { status: 'success', actions: [], summary: '' };
-    // Hardcoded pack path for MVP
-    const packSrc = path.join(__dirname, '../../pack');
-    const workflowSrc = path.join(packSrc, 'workflows');
-    
-    // Check if pack exists (mock if running in minimal env)
+export function buildContext(
+  params: Record<string, any>, 
+  env: Record<string, string>, 
+  logger: Logger,
+  secrets: string[] = []
+): ExecutionContext {
+  return new ExecutionContext(logger, env, params, secrets);
+}
+```
+
+packages/runner/src/declarations.d.ts
+```
+declare module 'safe-eval' {
+  export default function safeEval(code: string, context?: object, options?: object): any;
+}
+```
+
+packages/runner/src/engine.ts
+```
+import { WorkflowDefinition, Step } from '@workflow-pack/workflow';
+import { RunResult, StepResult } from '@workflow-pack/foundation';
+import { ExecutionContext } from './context';
+import { StepRunner, RunnerOptions } from './types';
+import safeEval from 'safe-eval';
+import { randomUUID } from 'crypto';
+
+export class WorkflowEngine {
+  private stepRunners: Map<string, StepRunner> = new Map();
+
+  constructor(private context: ExecutionContext, private options: RunnerOptions = {}) {}
+
+  public registerStepRunner(type: string, runner: StepRunner) {
+    this.stepRunners.set(type, runner);
+  }
+
+  public async run(workflow: WorkflowDefinition): Promise<RunResult> {
+    const runId = randomUUID();
+    const results: StepResult[] = [];
+    const startTime = new Date();
+
+    this.context.getLogger().info(`Starting workflow run ${runId}`);
+
     try {
-        // Simplified: just install workflows
-        const files = await fs.readdir(workflowSrc);
-        
-        for (const file of files) {
-            if (args.selection && args.selection.length > 0 && !args.selection.includes(file)) {
-                continue;
-            }
-
-            const srcFile = path.join(workflowSrc, file);
-            const destFile = path.join(args.targetPath, '.clinerules/workflows', file);
-            
-            let action: 'created' | 'overwritten' | 'skipped' | 'error' = 'created';
-            
-            let fileExists = false;
-            try {
-                await fs.access(destFile);
-                fileExists = true;
-            } catch {
-                fileExists = false;
-            }
-
-            if (fileExists) {
-                if (args.overwritePolicy === 'abort') {
-                    throw new Error(`File ${file} exists and policy is abort`);
-                } else if (args.overwritePolicy === 'skip') {
-                    action = 'skipped';
-                } else {
-                    action = 'overwritten';
-                }
-            } else {
-                action = 'created';
-            }
-
-            if (action !== 'skipped') {
-                // Determine if it needs template rendering (e.g. if it ends in .template)
-                // For now, simple copy
-                await copyFile(srcFile, destFile);
-            }
-            
-            report.actions.push({ file, action });
+      for (const step of workflow.steps) {
+        // 1. Check Condition
+        if (step.if) {
+          const shouldRun = this.evaluateCondition(step.if);
+          if (!shouldRun) {
+            results.push({
+              stepId: step.id,
+              status: 'skipped'
+            });
+            continue;
+          }
         }
 
-    } catch (e: any) {
-        report.status = 'failure';
-        report.summary = e.message;
-        return report;
-    }
+        // 2. Resolve Runner
+        const runner = this.stepRunners.get(step.type);
+        if (!runner) {
+          throw new Error(`No runner registered for step type: ${step.type}`);
+        }
 
-    report.summary = `Installed ${report.actions.filter(a => a.action === 'created' || a.action === 'overwritten').length} files.`;
-    return report;
-}
-```
+        // 3. Execute with Timeout (Q6)
+        try {
+          const result = await this.executeStepWithTimeout(runner, step);
+          results.push(result);
+          this.context.setOutput(step.id, result.stdout || result.artifacts); // Simple output mapping
 
-src/render/index.ts
-```
-import fs from 'fs/promises';
-import path from 'path';
+          if (result.status === 'failure') {
+            if (this.options.stopOnFailure !== false) { // Default true
+               this.context.getLogger().error(`Step ${step.id} failed. Stopping execution.`);
+               break;
+            }
+          }
+        } catch (error: any) {
+             results.push({
+              stepId: step.id,
+              status: 'failure',
+              error
+            });
+            if (this.options.stopOnFailure !== false) {
+               break;
+            }
+        }
+      }
 
-export async function renderPrompt(templateId: string, data: Record<string, any>): Promise<string> {
-  const templatePath = path.join(__dirname, 'templates', `${templateId}.md`);
-  
-  // Basic fallback if file doesn't exist (for testing or dynamic templates)
-  // In a real scenario, we might want to throw or have default templates.
-  // For MVP, let's assume the file must exist or we return a placeholder.
-  let template: string;
-  try {
-    template = await fs.readFile(templatePath, 'utf-8');
-  } catch (error) {
-    // If template file is missing, check if it was passed as a direct string (not typical for this signature, but defensive)
-    // Or just throw customized error
-    throw new Error(`Template not found: ${templateId}`);
-  }
+      const hasFailure = results.some(r => r.status === 'failure');
+      
+      return {
+        runId,
+        workflowId: workflow.id,
+        status: hasFailure ? 'failure' : 'success',
+        startedAt: startTime,
+        finishedAt: new Date(),
+        steps: results,
+        artifacts: [], // TODO: Collect artifacts
+        warnings: []
+      };
 
-  return interpolate(template, data);
-}
-
-export function renderWorkflowMd(workflow: any): string {
-  // Generates a markdown description of a workflow
-  return `# ${workflow.name}
-
-${workflow.description}
-
-## Inputs
-${workflow.inputs.map((i: any) => `- **${i.name}** (${i.type}): ${i.description}`).join('\n')}
-
-## Outputs
-${workflow.outputs.map((o: any) => `- **${o.name}** (${o.type}): ${o.description}`).join('\n')}
-`;
-}
-
-function interpolate(template: string, data: Record<string, any>): string {
-  return template.replace(/\{\{\w+\}\\/g, (_, key) => {
-    return data[key] !== undefined ? String(data[key]) : `{{${key}}}`;
-  });
-}
-```
-
-src/report/index.ts
-```
-import fs from 'fs/promises';
-import path from 'path';
-import crypto from 'crypto';
-
-const ARTIFACTS_DIR = '.clinerules/artifacts';
-
-export async function writeArtifact(relativePath: string, content: string): Promise<string> {
-  const fullPath = path.join(process.cwd(), ARTIFACTS_DIR, relativePath);
-  const dir = path.dirname(fullPath);
-
-  await fs.mkdir(dir, { recursive: true });
-
-  // Atomic write: write to temp file then rename
-  const tempPath = `${fullPath}.${crypto.randomBytes(4).toString('hex')}.tmp`;
-  
-  try {
-    await fs.writeFile(tempPath, content, 'utf-8');
-    await fs.rename(tempPath, fullPath);
-  } catch (err) {
-    // Attempt cleanup if rename failed
-    await fs.unlink(tempPath).catch(() => {});
-    throw err;
-  }
-
-  return fullPath;
-}
-
-export function formatSummary(title: string, items: string[]): string {
-  return `# ${title}\n\n${items.map(item => `- ${item}`).join('\n')}\n`;
-}
-
-export function formatJson(data: any): string {
-  return JSON.stringify(data, null, 2);
-}
-```
-
-src/taskbridge/exporter.ts
-```
-import fs from 'fs/promises';
-import { GeminiFlowProvider, GeminiTaskStatus } from './provider';
-import { TaskStatus } from './schemas';
-
-export interface ExportOptions {
-  provider: GeminiFlowProvider;
-  idMap: Record<string, string>; // Internal ID -> Stable ID
-  outputPath: string;
-}
-
-export interface TaskGraphSnapshot {
-  timestamp: string;
-  tasks: Record<string, { status: TaskStatus }>; // Internal ID -> Status
-}
-
-function mapExternalStatus(external: string): TaskStatus {
-  switch (external) {
-    case 'completed': return 'done';
-    case 'failed': return 'blocked'; // Or failed? PRD says 'blocked' for dependencies? Let's use 'blocked' or keep 'pending' if failed?
-    // Let's map 'failed' to 'blocked' for now to indicate intervention needed.
-    case 'in-progress': return 'in-progress';
-    default: return 'pending';
-  }
-}
-
-export async function exportFromGeminiFlow(options: ExportOptions): Promise<TaskGraphSnapshot> {
-  const externalStatuses = await options.provider.getTaskStatuses();
-  const snapshot: TaskGraphSnapshot = {
-    timestamp: new Date().toISOString(),
-    tasks: {}
-  };
-
-  // Reverse ID map for lookup: Stable ID -> Internal ID
-  const stableToInternal: Record<string, string> = {};
-  for (const [internalId, stableId] of Object.entries(options.idMap)) {
-    stableToInternal[stableId] = internalId;
-  }
-
-  for (const status of externalStatuses) {
-    const internalId = stableToInternal[status.id];
-    if (internalId) {
-      snapshot.tasks[internalId] = {
-        status: mapExternalStatus(status.status)
+    } catch (error: any) {
+      // Catastrophic failure
+      return {
+        runId,
+        workflowId: workflow.id,
+        status: 'failure',
+        startedAt: startTime,
+        finishedAt: new Date(),
+        steps: results, // Q6: Return partial results
+        artifacts: [],
+        warnings: [error.message]
       };
     }
   }
 
-  await fs.writeFile(options.outputPath, JSON.stringify(snapshot, null, 2));
-  return snapshot;
-}
-```
-
-src/taskbridge/importer.ts
-```
-import crypto from 'crypto';
-import { TaskGraph, TaskNode } from './schemas';
-
-export interface GeminiTask {
-  id: string;
-  name: string; // mapped from title
-  description?: string;
-  prerequisites: string[]; // mapped from dependencies
-  metadata: {
-    originalId: string;
-    priority?: string;
-    status: string;
-  };
-}
-
-export interface ImportResult {
-  tasks: GeminiTask[];
-  idMap: Record<string, string>; // Internal ID -> Gemini Stable ID
-}
-
-export function generateStableId(task: TaskNode): string {
-  const hash = crypto.createHash('sha256');
-  hash.update(task.title);
-  if (task.description) hash.update(task.description);
-  return hash.digest('hex').substring(0, 12);
-}
-
-export function importToGeminiFlow(graph: TaskGraph): ImportResult {
-  const idMap: Record<string, string> = {};
-  const geminiTasks: GeminiTask[] = [];
-
-  // First pass: generate stable IDs
-  function processNodeIds(nodes: TaskNode[]) {
-    for (const node of nodes) {
-      if (!idMap[node.id]) {
-        idMap[node.id] = generateStableId(node);
-      }
-      if (node.subtasks) {
-        processNodeIds(node.subtasks);
-      }
+  private evaluateCondition(expression: string): boolean {
+    try {
+      const snapshot = this.context.getSnapshot();
+      // Expose vars, outputs, env directly to eval scope
+      const scope = {
+        vars: snapshot.vars,
+        outputs: snapshot.outputs,
+        env: snapshot.env
+      };
+      return !!safeEval(expression, scope);
+    } catch (e) {
+      this.context.getLogger().warn(`Failed to evaluate condition '${expression}': ${(e as Error).message}`);
+      return false; // Fail safe
     }
   }
-  processNodeIds(graph.tasks);
 
-  // Second pass: generate tasks with mapped dependencies
-  function processNodes(nodes: TaskNode[], parentId?: string) {
-    for (const node of nodes) {
-      const stableId = idMap[node.id];
-      const prereqs: string[] = [];
+  private async executeStepWithTimeout(runner: StepRunner, step: Step): Promise<StepResult> {
+    const timeoutMs = step.timeout ?? 60000; // Default 1 min
+    
+    // Q6: Timeout logic
+    let timer: NodeJS.Timeout;
+    const timeoutPromise = new Promise<StepResult>((_, reject) => {
+      timer = setTimeout(() => {
+        reject(new Error(`Step ${step.id} timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
+    });
 
-      // Add declared dependencies
-      if (node.dependencies) {
-        for (const dep of node.dependencies) {
-            const depStr = String(dep);
-            if (idMap[depStr]) {
-                prereqs.push(idMap[depStr]);
-            }
-        }
-      }
+    try {
+      const result = await Promise.race([
+        runner.execute(step, this.context),
+        timeoutPromise
+      ]);
+      clearTimeout(timer!);
+      return result;
+    } catch (error) {
+      clearTimeout(timer!);
+      throw error;
+    }
+  }
+}
+```
 
-      // If subtask, strict dependency on parent? 
-      // Often subtasks just belong to parent. 
-      // For now, let's treat them as separate tasks, maybe linking via metadata or implicit dependency if needed.
-      // PRD doesn't specify strictly, but parent usually comes before child.
-      if (parentId) {
-          // Optional: Add parent as prerequisite?
-          // prereqs.push(parentId);
-      }
+packages/runner/src/formatting.ts
+```
+import { RunResult } from '@workflow-pack/foundation';
 
-      geminiTasks.push({
-        id: stableId,
-        name: node.title,
-        description: node.description,
-        prerequisites: prereqs,
-        metadata: {
-            originalId: node.id,
-            priority: node.priority,
-            status: node.status || 'pending',
-        }
+export function formatJson(result: RunResult): string {
+  return JSON.stringify(result, null, 2);
+}
+
+export function formatHuman(result: RunResult): string {
+  let output = `Workflow: ${result.workflowId} [${result.runId}]\n`;
+  output += `Status: ${result.status.toUpperCase()}\n`;
+  output += `Duration: ${result.finishedAt!.getTime() - result.startedAt.getTime()}ms\n\n`;
+
+  output += 'Steps:\n';
+  for (const step of result.steps) {
+    const symbol = step.status === 'success' ? '✅' : step.status === 'failure' ? '❌' : '⏭️';
+    output += `${symbol} ${step.stepId}: ${step.status.toUpperCase()}\n`;
+    if (step.error) {
+      output += `   Error: ${step.error.message}\n`;
+    }
+    if (step.stdout) {
+      output += `   Stdout: ${step.stdout.slice(0, 100).replace(/\n/g, ' ')}...\n`;
+    }
+  }
+
+  return output;
+}
+```
+
+packages/runner/src/index.ts
+```
+export * from './context';
+export * from './types';
+export * from './engine';
+export * from './formatting';
+export * from './steps/shell';
+export * from './steps/ai';
+export * from './steps/gate';
+```
+
+packages/runner/src/types.ts
+```
+import { Step, StepResult } from '@workflow-pack/foundation'
+import { ExecutionContext } from './context';
+
+export interface StepRunner {
+  canHandle(step: Step): boolean;
+  execute(step: Step, context: ExecutionContext): Promise<StepResult>;
+}
+
+export interface RunnerOptions {
+  stopOnFailure?: boolean;
+  dryRun?: boolean;
+}
+```
+
+packages/runner/tests/engine.test.ts
+```
+import { WorkflowEngine } from '../src/engine';
+import { ExecutionContext } from '../src/context';
+import { Logger } from '@workflow-pack/foundation'
+import { StepRunner } from '../src/types';
+import { WorkflowDefinition } from '@workflow-pack/workflow'
+
+describe('WorkflowEngine', () => {
+  let context: ExecutionContext;
+  let engine: WorkflowEngine;
+  let mockRunner: StepRunner;
+
+  beforeEach(() => {
+    context = new ExecutionContext(new Logger());
+    engine = new WorkflowEngine(context, { stopOnFailure: true });
+    
+    mockRunner = {
+      canHandle: () => true,
+      execute: jest.fn().mockResolvedValue({ stepId: 'test', status: 'success' })
+    };
+    engine.registerStepRunner('shell', mockRunner);
+  });
+
+  it('should execute a simple workflow', async () => {
+    const workflow: WorkflowDefinition = {
+      id: 'test',
+      name: 'Test',
+      version: '1.0.0',
+      steps: [{ id: 'step1', name: 'Step 1', type: 'shell', command: 'echo' }]
+    };
+
+    const result = await engine.run(workflow);
+    expect(result.status).toBe('success');
+    expect(mockRunner.execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('should stop on failure', async () => {
+    (mockRunner.execute as jest.Mock).mockResolvedValueOnce({ stepId: 'step1', status: 'failure' });
+    
+    const workflow: WorkflowDefinition = {
+      id: 'test',
+      name: 'Test',
+      version: '1.0.0',
+      steps: [
+        { id: 'step1', name: 'Step 1', type: 'shell', command: 'fail' },
+        { id: 'step2', name: 'Step 2', type: 'shell', command: 'skip me' }
+      ]
+    };
+
+    const result = await engine.run(workflow);
+    expect(result.status).toBe('failure');
+    expect(mockRunner.execute).toHaveBeenCalledTimes(1); // Should not run step 2
+  });
+
+  it('should skip steps based on condition', async () => {
+    context.setVar('SKIP', true);
+    
+    const workflow: WorkflowDefinition = {
+      id: 'test',
+      name: 'Test',
+      version: '1.0.0',
+      steps: [
+        { id: 'step1', name: 'Step 1', type: 'shell', command: 'echo', if: '!vars.SKIP' }
+      ]
+    };
+
+    const result = await engine.run(workflow);
+    expect(result.steps[0].status).toBe('skipped');
+    expect(mockRunner.execute).not.toHaveBeenCalled();
+  });
+
+  it('should handle timeouts and return partial results (Q6)', async () => {
+    (mockRunner.execute as jest.Mock).mockImplementation(() => new Promise(r => setTimeout(r, 100)));
+    
+    const workflow: WorkflowDefinition = {
+      id: 'test',
+      name: 'Test',
+      version: '1.0.0',
+      steps: [
+        { id: 'step1', name: 'Step 1', type: 'shell', command: 'echo', timeout: 10 }
+      ]
+    };
+
+    const result = await engine.run(workflow);
+    expect(result.status).toBe('failure'); // Catastrophic failure due to throw
+    expect(result.steps.length).toBe(1);
+    expect(result.steps[0].status).toBe('failure');
+    expect(result.steps[0].error?.message).toContain('timed out');
+  });
+});
+```
+
+packages/runner/tests/steps.test.ts
+```
+import { ShellStepRunner } from '../src/steps/shell';
+import { AiStepRunner } from '../src/steps/ai';
+import { GateStepRunner } from '../src/steps/gate';
+import { ExecutionContext } from '../src/context';
+import { Logger } from '@workflow-pack/foundation'
+import { HostKind } from '@workflow-pack/foundation'
+
+describe('Concrete Step Runners', () => {
+  let context: ExecutionContext;
+
+  beforeEach(() => {
+    context = new ExecutionContext(new Logger());
+  });
+
+  describe('ShellStepRunner', () => {
+    it('should capture output', async () => {
+      const runner = new ShellStepRunner();
+      const result = await runner.execute({
+        id: '1', name: 'echo', type: 'shell', command: 'echo "hello world"'
+      }, context);
+      
+      expect(result.status).toBe('success');
+      expect(result.stdout).toContain('hello world');
+    });
+
+    it('should respect dryRun', async () => {
+      const runner = new ShellStepRunner();
+      const result = await runner.execute({
+        id: '1', name: 'rm', type: 'shell', command: 'rm -rf /', dryRun: true
+      }, context);
+      
+      expect(result.status).toBe('success');
+      expect(result.stdout).toContain('[DRY-RUN]');
+    });
+  });
+
+  describe('AiStepRunner', () => {
+    it('should validate JSON output', async () => {
+      const mockAdapter = {
+        generate: jest.fn().mockResolvedValue('{"answer": 42}')
+      };
+      const runner = new AiStepRunner(mockAdapter);
+      
+      const result = await runner.execute({
+        id: '1', name: 'ai', type: 'ai', prompt: 'calc', outputSchema: {}
+      }, context);
+
+      expect(result.status).toBe('success');
+    });
+
+    it('should fail on malformed JSON', async () => {
+      const mockAdapter = {
+        generate: jest.fn().mockResolvedValue('not json')
+      };
+      const runner = new AiStepRunner(mockAdapter);
+      
+      const result = await runner.execute({
+        id: '1', name: 'ai', type: 'ai', prompt: 'calc', outputSchema: {}
+      }, context);
+
+      expect(result.status).toBe('failure');
+    });
+  });
+
+  describe('GateStepRunner', () => {
+    it('should auto-approve', async () => {
+      const runner = new GateStepRunner();
+      const result = await runner.execute({
+        id: '1', name: 'gate', type: 'gate', message: 'ok?', autoApprove: true
+      }, context);
+      
+      expect(result.status).toBe('success');
+    });
+
+    it('should fail in headless mode without autoApprove', async () => {
+      const runner = new GateStepRunner(HostKind.MCP);
+      const result = await runner.execute({
+        id: '1', name: 'gate', type: 'gate', message: 'ok?'
+      }, context);
+      
+      expect(result.status).toBe('failure');
+    });
+  });
+});
+```
+
+packages/registry/src/discovery.ts
+```
+import fg from 'fast-glob';
+import fs from 'fs/promises';
+import { parseWorkflow } from '@workflow-pack/workflow';
+import { WorkflowDefinition } from '@workflow-pack/workflow';
+import { Logger } from '@workflow-pack/foundation';
+
+// Step 2: Discovery Implementation
+// Scans for .yml/.json workflow files
+
+export interface DiscoveredWorkflow {
+  definition: WorkflowDefinition;
+  path: string;
+  source: 'local' | 'installed';
+}
+
+export async function scanForWorkflows(
+  directories: string[], 
+  source: 'local' | 'installed',
+  logger?: Logger
+): Promise<DiscoveredWorkflow[]> {
+  const workflows: DiscoveredWorkflow[] = [];
+
+  for (const dir of directories) {
+    try {
+      // Find all .yaml, .yml, .json files recursively
+      const entries = await fg(['**/*.{yaml,yml,json}'], { 
+        cwd: dir, 
+        absolute: true,
+        deep: 5 // Limit depth to prevent performance issues
       });
 
-      if (node.subtasks) {
-        processNodes(node.subtasks, stableId);
+      for (const entry of entries) {
+        try {
+          const content = await fs.readFile(entry, 'utf-8');
+          const ext = entry.endsWith('.json') ? 'json' : 'yaml';
+          
+          const definition = parseWorkflow(content, ext);
+          workflows.push({ definition, path: entry, source });
+        } catch (error: any) {
+          // Log warning but don't crash
+          if (logger) {
+            logger.warn(`Failed to parse workflow at ${entry}: ${error.message}`);
+          }
+        }
+      }
+    } catch (error: any) {
+       if (logger) {
+        logger.warn(`Failed to scan directory ${dir}: ${error.message}`);
       }
     }
   }
-  
-  processNodes(graph.tasks);
 
-  return {
-    tasks: geminiTasks,
-    idMap,
-  };
+  return workflows;
 }
 ```
 
-src/taskbridge/loader.ts
+packages/registry/src/index.ts
 ```
-import fs from 'fs/promises';
-import { TaskGraph, TaskGraphSchema, TaskNode } from './schemas';
+export * from './discovery';
+export * from './registry';
+```
 
-export class TaskLoaderError extends Error {
+packages/registry/src/registry.ts
+```
+import { DiscoveredWorkflow, scanForWorkflows } from './discovery';
+import { WorkflowDefinition } from '@workflow-pack/workflow';
+import { PackError } from '@workflow-pack/foundation';
+import { Logger } from '@workflow-pack/foundation';
+
+export class RegistryError extends PackError {
   constructor(message: string) {
-    super(message);
-    this.name = 'TaskLoaderError';
+    super(message, "REGISTRY_ERROR");
   }
 }
 
-export async function loadTasksJson(path: string): Promise<TaskGraph> {
-  let content: string;
-  try {
-    content = await fs.readFile(path, 'utf-8');
-  } catch (error) {
-    throw new TaskLoaderError(`Failed to read task file at ${path}`);
+export class WorkflowRegistry {
+  private workflows: Map<string, DiscoveredWorkflow> = new Map();
+
+  constructor(private logger?: Logger) {}
+
+  public async initialize(localDirs: string[] = [], installedDirs: string[] = []) {
+    const local = await scanForWorkflows(localDirs, 'local', this.logger);
+    const installed = await scanForWorkflows(installedDirs, 'installed', this.logger);
+
+    this.resolveWorkflows([...local, ...installed]);
   }
 
-  let rawData: unknown;
-  try {
-    rawData = JSON.parse(content);
-  } catch (error) {
-    throw new TaskLoaderError('Failed to parse JSON content');
+  /**
+   * Manually register a workflow object
+   */
+  public registerWorkflow(definition: WorkflowDefinition, source: 'local' | 'installed' = 'installed') {
+    this.resolveWorkflows([{
+      definition,
+      path: 'memory://' + definition.id,
+      source
+    }]);
   }
 
-  const result = TaskGraphSchema.safeParse(rawData);
-  if (!result.success) {
-    throw new TaskLoaderError(`Schema validation failed: ${result.error.message}`);
-  }
+  // Q2: Resolution logic - ID collision handling
+  private resolveWorkflows(candidates: DiscoveredWorkflow[]) {
+    for (const candidate of candidates) {
+      const id = candidate.definition.id;
+      const existing = this.workflows.get(id);
 
-  const graph = result.data;
-  validateDependencies(graph.tasks);
-  
-  return graph;
-}
-
-function validateDependencies(tasks: TaskNode[]) {
-  const taskMap = new Map<string, TaskNode>();
-  const visited = new Set<string>();
-  const recursionStack = new Set<string>();
-
-  // Helper to flatten tasks for easier ID lookup
-  function collectTasks(nodes: TaskNode[]) {
-    for (const node of nodes) {
-      if (taskMap.has(node.id)) {
-        throw new TaskLoaderError(`Duplicate task ID found: ${node.id}`);
+      if (!existing) {
+        this.workflows.set(id, candidate);
+        continue;
       }
-      taskMap.set(node.id, node);
-      if (node.subtasks) {
-        collectTasks(node.subtasks);
-      }
-    }
-  }
 
-  collectTasks(tasks);
-
-  function checkCycle(taskId: string) {
-    visited.add(taskId);
-    recursionStack.add(taskId);
-
-    const node = taskMap.get(taskId);
-    if (node && node.dependencies) {
-      for (const depId of node.dependencies) {
-        const depIdStr = String(depId);
-        if (!taskMap.has(depIdStr)) {
-          // Warning: Dependency on missing task? 
-          // For strict validation we might throw, but let's assume it might be external or allow it for now unless strictly required.
-          // PRD says "validate dependencies", so let's throw if missing.
-          throw new TaskLoaderError(`Task ${taskId} depends on missing task ${depIdStr}`);
-        }
-
-        if (!visited.has(depIdStr)) {
-          checkCycle(depIdStr);
-        } else if (recursionStack.has(depIdStr)) {
-          throw new TaskLoaderError(`Circular dependency detected: ${taskId} -> ${depIdStr}`);
-        }
+      // Conflict resolution
+      if (existing.source === 'local' && candidate.source === 'installed') {
+        // Keep local (override)
+        continue;
+      } else if (existing.source === 'installed' && candidate.source === 'local') {
+        // Replace installed with local
+        this.workflows.set(id, candidate);
+      } else if (existing.source === candidate.source) {
+         // Collision in same source type
+         if (existing.path !== candidate.path) {
+            this.logger?.warn(`Duplicate workflow ID '${id}' found in ${existing.path} and ${candidate.path}. Keeping the first one.`);
+         }
       }
     }
-
-    recursionStack.delete(taskId);
   }
 
-  for (const taskId of taskMap.keys()) {
-    if (!visited.has(taskId)) {
-      checkCycle(taskId);
+  public getWorkflow(id: string): WorkflowDefinition {
+    const wf = this.workflows.get(id);
+    if (!wf) {
+      throw new RegistryError(`Workflow not found: ${id}`);
     }
+    return wf.definition;
+  }
+
+  // Q17: Support hiding workflows
+  public listWorkflows(includeHidden = false): WorkflowDefinition[] {
+    const list = Array.from(this.workflows.values())
+      .map(w => w.definition)
+      .filter(w => includeHidden || !(w as any).hidden);
+
+    // Deterministic sort
+    return list.sort((a, b) => a.id.localeCompare(b.id));
+  }
+
+  public searchWorkflows(query: string): WorkflowDefinition[] {
+    const q = query.toLowerCase();
+    return this.listWorkflows(true).filter(w => 
+      w.id.toLowerCase().includes(q) || 
+      w.name.toLowerCase().includes(q) || 
+      w.description?.toLowerCase().includes(q)
+    );
   }
 }
 ```
 
-src/taskbridge/provider.ts
+packages/registry/tests/registry.test.ts
 ```
-export interface GeminiTaskStatus {
-  id: string; // Stable ID
-  status: 'pending' | 'in-progress' | 'completed' | 'failed';
-}
+import { WorkflowRegistry } from '../src/registry';
+import * as discovery from '../src/discovery';
+import { WorkflowDefinition } from '@workflow-pack/workflow'
 
-export interface GeminiFlowProvider {
-  getTaskStatuses(): Promise<GeminiTaskStatus[]>;
-}
+// Mocking the whole module is tricky with TS jest sometimes, let's use spyOn approach or manual mock if needed.
+// But jest.mock should work if paths are correct.
+jest.mock('../src/discovery');
 
-export class MockGeminiFlowProvider implements GeminiFlowProvider {
-  private mockData: GeminiTaskStatus[] = [];
+const mockWorkflow = (id: string, name: string): WorkflowDefinition => ({
+  id,
+  name,
+  version: '1.0.0',
+  steps: []
+});
 
-  constructor(data: GeminiTaskStatus[] = []) {
-    this.mockData = data;
-  }
+describe('WorkflowRegistry', () => {
+  let registry: WorkflowRegistry;
 
-  async getTaskStatuses(): Promise<GeminiTaskStatus[]> {
-    return Promise.resolve(this.mockData);
-  }
-}
+  beforeEach(() => {
+    registry = new WorkflowRegistry();
+    jest.clearAllMocks();
+  });
+
+  it('should resolve local workflows over installed ones', async () => {
+    (discovery.scanForWorkflows as jest.Mock).mockImplementation((dirs, source) => {
+      if (source === 'local') {
+        return Promise.resolve([{
+          definition: mockWorkflow('test-wf', 'Local Version'),
+          path: '/local/test.yml',
+          source: 'local'
+        }]);
+      } else {
+        return Promise.resolve([{
+          definition: mockWorkflow('test-wf', 'Installed Version'),
+          path: '/installed/test.yml',
+          source: 'installed'
+        }]);
+      }
+    });
+
+    await registry.initialize(['local'], ['installed']);
+    const wf = registry.getWorkflow('test-wf');
+    expect(wf.name).toBe('Local Version');
+  });
+
+  it('should list workflows deterministically', async () => {
+     (discovery.scanForWorkflows as jest.Mock).mockResolvedValue([
+      { definition: mockWorkflow('b-wf', 'B'), path: '/b.yml', source: 'local' },
+      { definition: mockWorkflow('a-wf', 'A'), path: '/a.yml', source: 'local' }
+    ]);
+
+    await registry.initialize(['local']);
+    const list = registry.listWorkflows();
+    expect(list[0].id).toBe('a-wf');
+    expect(list[1].id).toBe('b-wf');
+  });
+
+  it('should search workflows', async () => {
+    (discovery.scanForWorkflows as jest.Mock).mockResolvedValue([
+      { definition: mockWorkflow('find-me', 'Target'), path: '/t.yml', source: 'local' },
+      { definition: mockWorkflow('ignore-me', 'Other'), path: '/o.yml', source: 'local' }
+    ]);
+
+    await registry.initialize(['local']);
+    const results = registry.searchWorkflows('target');
+    expect(results).toHaveLength(1);
+    expect(results[0].id).toBe('find-me');
+  });
+});
 ```
 
-src/taskbridge/schemas.ts
+packages/workflow/src/index.ts
+```
+export * from './schema';
+export * from './manifest';
+export * from './parser';
+```
+
+packages/workflow/src/manifest.ts
 ```
 import { z } from 'zod';
+import semver from 'semver';
+import { ValidationError } from '@workflow-pack/foundation';
 
-export const TaskStatusSchema = z.enum([
-  'pending',
-  'in-progress',
-  'done',
-  'review',
-  'deferred',
-  'cancelled',
-  'blocked'
+// Step 3: Manifest Implementation
+// Addressing Q8 (engines check)
+
+export const PackManifestSchema = z.object({
+  name: z.string(),
+  version: z.string(),
+  description: z.string().optional(),
+  workflows: z.array(z.string()), // Paths to workflow files
+  engines: z.object({
+    host: z.string().optional(), // Semver range for the host CLI
+  }).optional(),
+});
+
+export type PackManifest = z.infer<typeof PackManifestSchema>;
+
+export function validateManifest(manifest: unknown, hostVersion: string): PackManifest {
+  const result = PackManifestSchema.safeParse(manifest);
+  
+  if (!result.success) {
+    throw new ValidationError(`Invalid manifest: ${result.error.message}`);
+  }
+
+  const data = result.data;
+
+  // Q8: Enforce host version compatibility
+  if (data.engines?.host) {
+    if (!semver.satisfies(hostVersion, data.engines.host)) {
+      throw new ValidationError(
+        `Pack requires host version ${data.engines.host}, but current version is ${hostVersion}`
+      );
+    }
+  }
+
+  return data;
+}
+```
+
+packages/workflow/src/parser.ts
+```
+import yaml from 'js-yaml';
+import { WorkflowSchema, WorkflowDefinition } from './schema';
+import { ValidationError } from '@workflow-pack/foundation';
+
+// Step 4: Parser Implementation
+// Validates JSON/YAML against schema with error reporting
+
+export function parseWorkflow(content: string, format: 'yaml' | 'json' = 'yaml'): WorkflowDefinition {
+  let parsed: unknown;
+
+  try {
+    if (format === 'json') {
+      parsed = JSON.parse(content);
+    } else {
+      parsed = yaml.load(content);
+    }
+  } catch (error: any) {
+    throw new ValidationError(`Failed to parse ${format.toUpperCase()}: ${error.message}`);
+  }
+
+  const result = WorkflowSchema.safeParse(parsed);
+
+  if (!result.success) {
+    // Format Zod errors to be human-readable
+    const errorMessages = result.error.errors.map(err => {
+      const path = err.path.join('.');
+      return `${path}: ${err.message}`;
+    }).join('\n');
+    
+    throw new ValidationError(`Workflow validation failed:\n${errorMessages}`);
+  }
+
+  // Q20: Could enforce strict workflow versioning here if needed
+  // e.g., if (result.data.version !== '1.0') warn();
+
+  return result.data;
+}
+
+export function validateWorkflow(obj: unknown): WorkflowDefinition {
+  const result = WorkflowSchema.safeParse(obj);
+  if (!result.success) {
+    throw new ValidationError(`Invalid workflow object: ${result.error.message}`);
+  }
+  return result.data;
+}
+```
+
+packages/workflow/src/schema.ts
+```
+import { z } from 'zod';
+import { StepType, HostKind } from '@workflow-pack/foundation';
+
+// Step 2: Schema Definition
+// Addressing Q13 (dryRun) and Q18 (onFailure)
+
+const BaseStepSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  if: z.string().optional(),
+  timeout: z.number().optional(),
+  onFailure: z.string().optional(), // Q18: Rollback/recovery step ID
+});
+
+export const ShellStepSchema = BaseStepSchema.extend({
+  type: z.literal('shell'),
+  command: z.string(),
+  cwd: z.string().optional(),
+  env: z.record(z.string()).optional(),
+  dryRun: z.boolean().optional(), // Q13: Safe preview support
+});
+
+export const AiStepSchema = BaseStepSchema.extend({
+  type: z.literal('ai'),
+  prompt: z.string(),
+  model: z.string().optional(),
+  contextFiles: z.array(z.string()).optional(),
+  outputSchema: z.record(z.unknown()).optional(),
+});
+
+export const GateStepSchema = BaseStepSchema.extend({
+  type: z.literal('gate'),
+  message: z.string(),
+  autoApprove: z.boolean().optional(),
+  requiredApprovals: z.number().optional(),
+});
+
+export const StepSchema = z.discriminatedUnion('type', [
+  ShellStepSchema,
+  AiStepSchema,
+  GateStepSchema,
 ]);
 
-export type TaskStatus = z.infer<typeof TaskStatusSchema>;
+export type Step = z.infer<typeof StepSchema>;
 
-export const BaseTaskSchema = z.object({
-  id: z.string(),
-  title: z.string(),
+export const ParamSchema = z.object({
+  type: z.string(),
   description: z.string().optional(),
-  status: TaskStatusSchema.optional().default('pending'),
-  priority: z.enum(['high', 'medium', 'low']).optional(),
-  dependencies: z.array(z.union([z.string(), z.number()])).optional().default([]),
-  details: z.string().optional(),
+  default: z.unknown().optional(),
 });
 
-export type TaskNode = z.infer<typeof BaseTaskSchema> & {
-  subtasks?: TaskNode[];
+export const WorkflowSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  version: z.string(), // Q20: Version checking will happen against this
+  description: z.string().optional(),
+  params: z.record(ParamSchema).optional(),
+  steps: z.array(StepSchema),
+  outputs: z.record(z.string()).optional(),
+}).strict(); // Enforce no unknown fields
+
+export type WorkflowDefinition = z.infer<typeof WorkflowSchema>;
+```
+
+packages/workflow/tests/workflow.test.ts
+```
+import { parseWorkflow } from '../src/parser';
+import { validateManifest } from '../src/manifest';
+import { ValidationError } from '@workflow-pack/foundation'
+
+describe('Workflow Package', () => {
+  describe('Schema Validation', () => {
+    it('should validate a valid workflow', () => {
+      const validYaml = `
+id: test-workflow
+name: Test
+version: 1.0.0
+steps:
+  - id: step1
+    name: Shell Step
+    type: shell
+    command: echo hello
+    dryRun: true
+    onFailure: step2
+`;
+      const workflow = parseWorkflow(validYaml, 'yaml');
+      expect(workflow.id).toBe('test-workflow');
+      expect(workflow.steps[0].type).toBe('shell');
+      expect((workflow.steps[0] as any).dryRun).toBe(true);
+      expect(workflow.steps[0].onFailure).toBe('step2');
+    });
+
+    it('should reject invalid step types', () => {
+      const invalidYaml = `
+id: test-workflow
+name: Test
+version: 1.0.0
+steps:
+  - id: step1
+    name: Bad Step
+    type: unknown
+`;
+      expect(() => parseWorkflow(invalidYaml, 'yaml')).toThrow(ValidationError);
+    });
+  });
+
+  describe('Manifest Validation', () => {
+    it('should validate a compatible host version', () => {
+      const manifest = {
+        name: 'test-pack',
+        version: '1.0.0',
+        workflows: [],
+        engines: { host: '>=1.0.0' }
+      };
+      expect(() => validateManifest(manifest, '1.2.0')).not.toThrow();
+    });
+
+    it('should reject an incompatible host version', () => {
+      const manifest = {
+        name: 'test-pack',
+        version: '1.0.0',
+        workflows: [],
+        engines: { host: '>=2.0.0' }
+      };
+      expect(() => validateManifest(manifest, '1.5.0')).toThrow(ValidationError);
+    });
+  });
+});
+```
+
+packages/workflows/src/index.ts
+```
+import { PrReviewWorkflow } from './pr-review';
+import { LintSweepWorkflow } from './lint-sweep';
+
+export const workflows = [
+  PrReviewWorkflow,
+  LintSweepWorkflow
+];
+```
+
+packages/workflows/src/lint-sweep.ts
+```
+import { WorkflowDefinition } from '@workflow-pack/workflow';
+
+export const LintSweepWorkflow: WorkflowDefinition = {
+  id: 'lint-sweep',
+  name: 'Lint Sweep',
+  version: '1.0.0',
+  description: 'Run linters, apply fixes, and summarize changes',
+  steps: [
+    {
+      id: 'lint-check',
+      name: 'Check Lint',
+      type: 'shell',
+      command: 'npm run lint',
+      onFailure: 'lint-fix' // If check fails, try fix
+    },
+    {
+      id: 'lint-fix',
+      name: 'Apply Fixes',
+      type: 'shell',
+      command: 'npm run lint -- --fix',
+      if: 'steps["lint-check"].status === "failure"' // Conditional execution
+    },
+    {
+      id: 'verify-tests',
+      name: 'Verify Tests',
+      type: 'shell',
+      command: 'npm test'
+    },
+    {
+      id: 'summarize',
+      name: 'Summarize Changes',
+      type: 'ai',
+      prompt: 'Summarize the linting fixes applied.',
+      if: 'steps["lint-fix"].status === "success"'
+    }
+  ]
 };
-
-export const TaskNodeSchema: z.ZodType<TaskNode> = BaseTaskSchema.extend({
-  subtasks: z.lazy(() => z.array(TaskNodeSchema).optional()),
-});
-
-export const TaskGraphSchema = z.object({
-  tasks: z.array(TaskNodeSchema),
-  version: z.string().optional(),
-});
-
-export type TaskGraph = z.infer<typeof TaskGraphSchema>;
 ```
 
-src/utils/exec.ts
+packages/workflows/src/pr-review.ts
 ```
-import { spawn } from 'child_process';
+import { WorkflowDefinition } from '@workflow-pack/workflow';
 
-export interface ExecResult {
-  stdout: string;
-  stderr: string;
-  exitCode: number;
+export const PrReviewWorkflow: WorkflowDefinition = {
+  id: 'pr-review',
+  name: 'PR Review',
+  version: '1.0.0',
+  description: 'Analyze a PR diff and generate a review',
+  params: {
+    prNumber: { type: 'string', description: 'PR number to review' }
+  },
+  steps: [
+    {
+      id: 'fetch-pr',
+      name: 'Fetch PR Data',
+      type: 'shell',
+      command: 'gh pr view ${vars.prNumber} --json title,body,headRefName,baseRefName > pr_data.json'
+    },
+    {
+      id: 'fetch-diff',
+      name: 'Fetch Diff',
+      type: 'shell',
+      command: 'gh pr diff ${vars.prNumber} > pr.diff'
+    },
+    {
+      id: 'analyze',
+      name: 'AI Analysis',
+      type: 'ai',
+      prompt: 'Analyze this PR diff and metadata. Identify risks, bugs, and style issues.',
+      contextFiles: ['pr_data.json', 'pr.diff'],
+      outputSchema: {
+        riskLevel: 'high|medium|low',
+        summary: 'string',
+        issues: 'array'
+      }
+    },
+    {
+      id: 'approve-submit',
+      name: 'Approve Submission',
+      type: 'gate',
+      message: 'Review the AI analysis. Submit to GitHub?'
+    },
+    {
+      id: 'submit-review',
+      name: 'Submit Review',
+      type: 'shell',
+      command: 'gh pr review ${vars.prNumber} --comment "${outputs.analyze.summary}"'
+    }
+  ]
+};
+```
+
+packages/workflows/tests/workflows.test.ts
+```
+import { WorkflowEngine } from '@workflow-pack/runner'
+import { ExecutionContext } from '@workflow-pack/runner'
+import { Logger } from '@workflow-pack/foundation'
+import { PrReviewWorkflow } from '../src/pr-review';
+import { LintSweepWorkflow } from '../src/lint-sweep';
+
+describe('Workflow Catalog Integration', () => {
+  let logger: Logger;
+  let context: ExecutionContext;
+  let engine: WorkflowEngine;
+
+  beforeEach(() => {
+    logger = new Logger();
+    context = new ExecutionContext(logger);
+    engine = new WorkflowEngine(context, { stopOnFailure: true });
+  });
+
+  it('should validate pr-review workflow structure', () => {
+    expect(PrReviewWorkflow.id).toBe('pr-review');
+    expect(PrReviewWorkflow.steps.length).toBeGreaterThan(0);
+  });
+
+  it('should validate lint-sweep workflow structure', () => {
+    expect(LintSweepWorkflow.id).toBe('lint-sweep');
+    expect(LintSweepWorkflow.steps.length).toBeGreaterThan(0);
+  });
+
+  it('should simulate pr-review execution with mock runners', async () => {
+    const mockShellRunner = {
+      canHandle: (s: any) => s.type === 'shell',
+      execute: jest.fn().mockResolvedValue({ status: 'success', stdout: 'mock output' })
+    };
+    const mockAiRunner = {
+      canHandle: (s: any) => s.type === 'ai',
+      execute: jest.fn().mockResolvedValue({ status: 'success', stdout: '{"summary": "looks good"}' })
+    };
+    const mockGateRunner = {
+      canHandle: (s: any) => s.type === 'gate',
+      execute: jest.fn().mockResolvedValue({ status: 'success' })
+    };
+
+    engine.registerStepRunner('shell', mockShellRunner as any);
+    engine.registerStepRunner('ai', mockAiRunner as any);
+    engine.registerStepRunner('gate', mockGateRunner as any);
+
+    const result = await engine.run(PrReviewWorkflow);
+    expect(result.status).toBe('success');
+    expect(mockShellRunner.execute).toHaveBeenCalled();
+    expect(mockAiRunner.execute).toHaveBeenCalled();
+    expect(mockGateRunner.execute).toHaveBeenCalled();
+  });
+});
+```
+
+packages/cli/src/commands/list.ts
+```
+import { Command } from 'commander';
+import { WorkflowRegistry } from '@workflow-pack/registry';
+import Table from 'cli-table3';
+import chalk from 'chalk';
+
+export function makeListCommand(registry: WorkflowRegistry) {
+  return new Command('list')
+    .description('List available workflows')
+    .option('--json', 'Output results as JSON')
+    .action(async (options) => {
+      const workflows = registry.listWorkflows();
+
+      if (options.json) {
+        console.log(JSON.stringify(workflows, null, 2));
+        return;
+      }
+
+      if (workflows.length === 0) {
+        console.log(chalk.yellow('No workflows found.'));
+        return;
+      }
+
+      const table = new Table({
+        head: [chalk.cyan('ID'), chalk.cyan('Name'), chalk.cyan('Version'), chalk.cyan('Description')],
+        colWidths: [20, 25, 10, 40]
+      });
+
+      for (const wf of workflows) {
+        table.push([wf.id, wf.name, wf.version, wf.description || '']);
+      }
+
+      console.log(table.toString());
+    });
+}
+```
+
+packages/cli/src/commands/run.ts
+```
+import { Command } from 'commander';
+import { WorkflowRegistry } from '@workflow-pack/registry';
+import { WorkflowEngine, ExecutionContext, ShellStepRunner, GateStepRunner, AiStepRunner, formatHuman, formatJson } from '@workflow-pack/runner';
+import { Logger } from '@workflow-pack/foundation';
+import chalk from 'chalk';
+import ora from 'ora';
+
+export function makeRunCommand(registry: WorkflowRegistry) {
+  return new Command('run')
+    .description('Run a specific workflow')
+    .argument('<id>', 'Workflow ID')
+    .option('--json', 'Output results as JSON')
+    .option('--dry-run', 'Run without executing side effects')
+    .allowUnknownOption() // Important for dynamic params (Q9)
+    .action(async (id, options, command) => {
+      try {
+        const workflow = registry.getWorkflow(id);
+        const logger = new Logger();
+        
+        // Q9: Dynamic param parsing
+        const params: Record<string, any> = {};
+        const rawArgs = command.parent?.rawArgs || [];
+        const runIndex = rawArgs.indexOf('run');
+        const workflowArgs = rawArgs.slice(runIndex + 2); // after 'run' and '<id>'
+
+        for (let i = 0; i < workflowArgs.length; i++) {
+          if (workflowArgs[i].startsWith('--')) {
+            const key = workflowArgs[i].slice(2);
+            const nextArg = workflowArgs[i + 1];
+            if (nextArg && !nextArg.startsWith('--')) {
+              params[key] = nextArg;
+              i++;
+            } else {
+              params[key] = true;
+            }
+          }
+        }
+
+        const context = new ExecutionContext(logger, process.env as any, params);
+        if (options.dryRun) context.setVar('dryRun', true);
+
+        const engine = new WorkflowEngine(context);
+        engine.registerStepRunner('shell', new ShellStepRunner());
+        engine.registerStepRunner('gate', new GateStepRunner());
+        
+        // Register a mock AI runner for the CLI MVP
+        engine.registerStepRunner('ai', new AiStepRunner({
+          generate: async (prompt) => {
+            return JSON.stringify({ 
+              summary: "This is a mock AI summary for the CLI demonstration.",
+              riskLevel: "low",
+              issues: []
+            });
+          }
+        }));
+
+        const spinner = !options.json ? ora(`Running workflow ${chalk.cyan(id)}...`).start() : null;
+        const result = await engine.run(workflow);
+        if (spinner) spinner.stop();
+
+        if (options.json) {
+          console.log(formatJson(result));
+        } else {
+          console.log(formatHuman(result));
+        }
+
+        process.exit(result.status === 'success' ? 0 : 1);
+      } catch (error: any) {
+        console.error(chalk.red(`Error: ${error.message}`));
+        process.exit(1);
+      }
+    });
+}
+```
+
+packages/runner/src/steps/ai.ts
+```
+import { StepRunner } from '../types';
+import { AiStep, StepResult } from '@workflow-pack/foundation';
+import { ExecutionContext } from '../context';
+import { ValidationError } from '@workflow-pack/foundation';
+
+// Adapter interface for host AI capability
+export interface AiAdapter {
+  generate(prompt: string, contextFiles?: string[]): Promise<string>;
 }
 
-export async function executeCommand(
-  command: string,
-  args: string[],
-  env: NodeJS.ProcessEnv = process.env
-): Promise<ExecResult> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { env });
+export class AiStepRunner implements StepRunner {
+  constructor(private adapter: AiAdapter) {}
 
-    let stdout = '';
-    let stderr = '';
+  canHandle(step: any): boolean {
+    return step.type === 'ai';
+  }
 
-    child.stdout.on('data', (data) => {
-      stdout += data.toString();
+  async execute(step: AiStep, context: ExecutionContext): Promise<StepResult> {
+    try {
+      const response = await this.adapter.generate(step.prompt, step.contextFiles);
+      
+      let parsed: unknown;
+      try {
+        // Try parsing as JSON first if schema is present
+        if (step.outputSchema) {
+           parsed = JSON.parse(response);
+           // Q11: In a real impl, we'd use AJV or Zod here to validate 'parsed' against 'step.outputSchema'
+           // For now, simple check
+           if (typeof parsed !== 'object' || parsed === null) {
+             throw new Error("Response is not a valid JSON object");
+           }
+        } else {
+          parsed = response;
+        }
+      } catch (e) {
+        throw new ValidationError(`AI response validation failed: ${(e as Error).message}`);
+      }
+
+      return {
+        stepId: step.id,
+        status: 'success',
+        stdout: typeof parsed === 'string' ? parsed : JSON.stringify(parsed, null, 2),
+        artifacts: [] 
+      };
+    } catch (error) {
+      return {
+        stepId: step.id,
+        status: 'failure',
+        error: error as Error
+      };
+    }
+  }
+}
+```
+
+packages/runner/src/steps/gate.ts
+```
+import { StepRunner } from '../types';
+import { GateStep, StepResult, HostKind } from '@workflow-pack/foundation';
+import { ExecutionContext } from '../context';
+import readline from 'readline';
+
+export class GateStepRunner implements StepRunner {
+  constructor(private hostKind: HostKind = HostKind.CLI) {}
+
+  canHandle(step: any): boolean {
+    return step.type === 'gate';
+  }
+
+  async execute(step: GateStep, context: ExecutionContext): Promise<StepResult> {
+    const logger = context.getLogger();
+
+    if (step.autoApprove) {
+      logger.info(`Auto-approving gate: ${step.message}`);
+      return { stepId: step.id, status: 'success' };
+    }
+
+    // Q1: Host check
+    if (this.hostKind !== HostKind.CLI) {
+      // In non-interactive modes without autoApprove, we must fail or implement a different mechanism (e.g. MCP request)
+      // For MVP, we fail safe
+      return {
+        stepId: step.id,
+        status: 'failure',
+        error: new Error(`Interactive gate required in non-interactive host (${this.hostKind}) without autoApprove.`)
+      };
+    }
+
+    logger.info(`GATE: ${step.message}`);
+    logger.info('Press "y" to approve, any other key to deny.');
+
+    const answer = await this.promptUser();
+    
+    if (answer.toLowerCase() === 'y') {
+      return { stepId: step.id, status: 'success' };
+    } else {
+      return { 
+        stepId: step.id, 
+        status: 'failure', 
+        error: new Error('User denied gate.') 
+      };
+    }
+  }
+
+  private promptUser(): Promise<string> {
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout
     });
 
-    child.stderr.on('data', (data) => {
-      stderr += data.toString();
-    });
-
-    child.on('error', (err) => {
-      reject(err);
-    });
-
-    child.on('close', (code) => {
-      resolve({
-        stdout: stdout.trim(),
-        stderr: stderr.trim(),
-        exitCode: code ?? -1,
+    return new Promise(resolve => {
+      rl.question('> ', (answer) => {
+        rl.close();
+        resolve(answer);
       });
     });
-  });
+  }
 }
 ```
 
-src/utils/file-ops.ts
+packages/runner/src/steps/shell.ts
 ```
-import fs from 'fs/promises';
-import path from 'path';
+import { spawn } from 'child_process';
+import { StepRunner } from '../types';
+import { ShellStep, StepResult } from '@workflow-pack/foundation';
+import { ExecutionContext } from '../context';
 
-export async function ensureDir(dir: string): Promise<void> {
-  await fs.mkdir(dir, { recursive: true });
-}
-
-export async function copyFile(src: string, dest: string): Promise<void> {
-  await ensureDir(path.dirname(dest));
-  await fs.copyFile(src, dest);
-}
-
-export async function renderTemplate(src: string, dest: string, context: Record<string, string>): Promise<void> {
-  await ensureDir(path.dirname(dest));
-  let content = await fs.readFile(src, 'utf-8');
-  
-  for (const [key, value] of Object.entries(context)) {
-    const placeholder = new RegExp(`{{${key}}}`, 'g');
-    content = content.replace(placeholder, value);
+export class ShellStepRunner implements StepRunner {
+  canHandle(step: any): boolean {
+    return step.type === 'shell';
   }
 
-  await fs.writeFile(dest, content);
-}
-```
-
-pack/scripts/ci-review.ts
-```
-import { execGit } from '../../src/git';
-import { runHeadless } from '../../src/cline';
-import { parseVerdict, shouldFail } from '../../src/gating';
-import { writeArtifact } from '../../src/report';
-import fs from 'fs/promises';
-import path from 'path';
-
-async function main() {
-  try {
-    // 6.1 Environment Detection
-    const isGitHubActions = !!process.env.GITHUB_ACTIONS;
-    const baseRef = process.env.GITHUB_BASE_REF || 'main';
-    const headRef = process.env.GITHUB_HEAD_REF || 'HEAD';
-
-    console.log(`🌍 Environment: ${isGitHubActions ? 'GitHub Actions' : 'Generic CI'}`);
-    console.log(`🌿 Comparing ${baseRef}..${headRef}`);
-
-    // Hydrate history if needed (common in shallow clones)
-    if (isGitHubActions) {
-      console.log('💧 Hydrating git history...');
-      await execGit(`fetch --depth=100 origin ${baseRef}`);
-    }
-
-    // 6.2 Diff Extraction
-    const diff = await execGit(`diff origin/${baseRef}..${headRef}`);
-    if (!diff) {
-      console.log('⚪ No changes to review.');
-      process.exit(0);
-    }
-
-    // Load Prompt
-    const templatePath = path.join(__dirname, '../workflows/ci-pr-review.md');
-    const template = await fs.readFile(templatePath, 'utf-8');
-    const prompt = template.replace('{{diff}}', diff);
-
-    // 6.3 Headless Analysis
-    console.log('🤖 Running AI PR analysis...');
-    const result = await runHeadless(prompt, { timeout: 120000 });
-
-    // 6.4 Verdict Enforcement
-    const verdict = parseVerdict(result.stdout);
-    const failed = shouldFail(verdict);
-
-    const artifactPath = await writeArtifact(`ci-review/${Date.now()}.md`, result.stdout);
+  async execute(step: ShellStep, context: ExecutionContext): Promise<StepResult> {
+    const logger = context.getLogger();
     
-    if (failed) {
-      if (isGitHubActions) {
-        console.log(`::error title=PR Review Failed::${verdict} verdict from AI review.`);
-      }
-      console.error('❌ CI Gate: FAIL');
-      console.error(`Full report: ${artifactPath}`);
-      process.exit(1);
-    } else {
-      console.log('✅ CI Gate: PASS');
-      process.exit(0);
-    }
-  } catch (error: any) {
-    console.error('💥 Error in CI review:', error.message);
-    process.exit(1);
-  }
-}
-
-main();
-```
-
-pack/scripts/generate-changelog.ts
-```
-import { getCommitLog } from '../../src/git';
-import { runHeadless } from '../../src/cline';
-import fs from 'fs/promises';
-import path from 'path';
-
-async function main() {
-  try {
-    const count = parseInt(process.argv[2] || '20');
-    console.log(`📜 Fetching last ${count} commits...`);
-    const commits = await getCommitLog(count);
-
-    if (!commits) {
-      console.log('⚪ No commits found to summarize.');
-      process.exit(0);
+    if (step.dryRun || context.get('dryRun')) {
+      logger.info(`[DRY-RUN] Would execute: ${step.command}`);
+      return { stepId: step.id, status: 'success', stdout: '[DRY-RUN]' };
     }
 
-    // Load template
-    const templatePath = path.join(__dirname, '../workflows/changelog.md');
-    const template = await fs.readFile(templatePath, 'utf-8');
-    const prompt = template.replace('{{commits}}', commits);
+    return new Promise((resolve, reject) => {
+      const child = spawn(step.command, {
+        shell: true,
+        cwd: step.cwd || process.cwd(),
+        env: { ...process.env, ...step.env },
+        stdio: ['ignore', 'pipe', 'pipe'] // Q5: Ignore stdin to prevent hanging on prompts
+      });
 
-    console.log('✍️ Generating changelog summary...');
-    const result = await runHeadless(prompt, { timeout: 90000 });
+      let stdout = '';
+      let stderr = '';
+      const MAX_BUFFER = 1024 * 1024; // 1MB
 
-    const changelogPath = path.join(process.cwd(), 'CHANGELOG.md');
-    const date = new Date().toLocaleDateString();
-    const entry = `
-## [${date}]
+      child.stdout.on('data', (data) => {
+        if (stdout.length < MAX_BUFFER) stdout += data.toString();
+      });
 
-${result.stdout}
-`;
+      child.stderr.on('data', (data) => {
+        if (stderr.length < MAX_BUFFER) stderr += data.toString();
+      });
 
-    // Append to CHANGELOG.md or create if not exists
-    let existingContent = '';
-    try {
-      existingContent = await fs.readFile(changelogPath, 'utf-8');
-    } catch {
-      existingContent = '# Changelog\n';
-    }
+      child.on('error', (error) => {
+        resolve({
+          stepId: step.id,
+          status: 'failure',
+          error,
+          stdout,
+          stderr
+        });
+      });
 
-    await fs.writeFile(changelogPath, existingContent + entry, 'utf-8');
-    
-    console.log(`✅ Changelog updated: ${changelogPath}`);
-  } catch (error: any) {
-    console.error('💥 Error generating changelog:', error.message);
-    process.exit(1);
-  }
-}
-
-main();
-```
-
-pack/scripts/lint-sweep.ts
-```
-import { exec } from 'child_process';
-import util from 'util';
-import fs from 'fs/promises';
-import path from 'path';
-import { runHeadless } from '../../src/cline';
-
-const execAsync = util.promisify(exec);
-
-// 8.1 Linter Execution Harness
-async function runLint(command: string): Promise<{ success: boolean; output: string }> {
-  try {
-    const { stdout, stderr } = await execAsync(command);
-    return { success: true, output: stdout + stderr };
-  } catch (error: any) {
-    return { success: false, output: error.stdout + error.stderr };
-  }
-}
-
-// 8.3 AI Response Parsing and Patching Logic
-function applyPatches(fileContent: string, aiOutput: string): string {
-  const blocks = aiOutput.split('<<<<SEARCH');
-  let newContent = fileContent;
-
-  for (let i = 1; i < blocks.length; i++) {
-    const block = blocks[i];
-    const parts = block.split('====');
-    if (parts.length < 2) continue;
-
-    const search = parts[0].trim();
-    const replaceParts = parts[1].split('>>>>REPLACE');
-    if (replaceParts.length < 1) continue;
-
-    const replace = replaceParts[0].trim();
-
-    if (newContent.includes(search)) {
-      newContent = newContent.replace(search, replace);
-    } else {
-      console.warn('⚠️ Could not find exact search block in file.');
-    }
-  }
-
-  return newContent;
-}
-
-// 8.4 Implement Retry Loop and Verification Orchestrator
-async function main() {
-  const lintCommand = process.argv[2] || 'npm run lint';
-  const maxRetries = 3;
-  let attempt = 0;
-
-  try {
-    while (attempt < maxRetries) {
-      attempt++;
-      console.log(`🧹 Attempt ${attempt}/${maxRetries}: Running "${lintCommand}"...`);
-      const { success, output } = await runLint(lintCommand);
-
-      if (success) {
-        console.log('✅ Lint pass successful!');
-        process.exit(0);
-      }
-
-      console.log('❌ Lint errors found. Invoking AI to fix...');
-      
-      // For MVP, we'll try to find the first file with an error in the output
-      // Simple heuristic: look for absolute or relative paths
-      const fileMatch = output.match(/(\/[\w\-\.\/]+\.(ts|js|tsx|jsx))/);
-      if (!fileMatch) {
-        console.error('Could not identify file to fix from error log.');
-        process.exit(1);
-      }
-
-      const filePath = fileMatch[0];
-      const absolutePath = path.isAbsolute(filePath) ? filePath : path.join(process.cwd(), filePath);
-      
-      let fileContent: string;
-      try {
-        fileContent = await fs.readFile(absolutePath, 'utf-8');
-      } catch {
-        console.error(`Could not read file: ${absolutePath}`);
-        process.exit(1);
-      }
-
-      // Load Template
-      const templatePath = path.join(__dirname, '../workflows/lint-fix.md');
-      const template = await fs.readFile(templatePath, 'utf-8');
-      const prompt = template
-        .replace('{{errorLog}}', output)
-        .replace('{{filePath}}', filePath)
-        .replace('{{fileContent}}', fileContent);
-
-      const result = await runHeadless(prompt, { timeout: 120000 });
-      const patchedContent = applyPatches(fileContent, result.stdout);
-
-      if (patchedContent !== fileContent) {
-        await fs.writeFile(absolutePath, patchedContent, 'utf-8');
-        console.log(`🛠️ Applied AI patches to ${filePath}`);
-      } else {
-        console.warn('AI did not suggest any applicable patches.');
-        break; // Stop to avoid infinite loop if no changes
-      }
-    }
-
-    console.error('❌ Failed to fix all lint errors after max retries.');
-    process.exit(1);
-  } catch (error: any) {
-    console.error('💥 Error in lint-sweep:', error.message);
-    process.exit(1);
-  }
-}
-
-main();
-```
-
-pack/scripts/pre-commit.ts
-```
-import { getStagedDiff } from '../../src/git';
-import { renderPrompt } from '../../src/render';
-import { runHeadless } from '../../src/cline';
-import { parseVerdict, shouldFail } from '../../src/gating';
-import { writeArtifact, formatSummary } from '../../src/report';
-
-async function main() {
-  try {
-    const diff = await getStagedDiff();
-    if (!diff) {
-      process.exit(0);
-    }
-
-    // Since renderPrompt looks in __dirname/templates, we might need a workaround or symlink
-    // For now, let's assume it can find it or we provide a more robust pathing.
-    // Actually, src/render/index.ts uses path.join(__dirname, 'templates', `${templateId}.md`).
-    // If we run this from pack/scripts, __dirname is .../pack/scripts.
-    // We should probably update src/render to support a base path or use process.cwd().
-    
-    // Quick hack for MVP: manually interpolate for now or use relative path if we know it.
-    // Better: update src/render/index.ts to take a custom base path.
-    
-    // For this runner, let's just use a simple template string or relative read.
-    const fs = require('fs/promises');
-    const path = require('path');
-    const templatePath = path.join(__dirname, '../workflows/pre-commit-review.md');
-    const template = await fs.readFile(templatePath, 'utf-8');
-    const prompt = template.replace('{{diff}}', diff);
-
-    console.log('🔍 Running pre-commit risk review...');
-    const result = await runHeadless(prompt, { timeout: 60000 });
-
-    const verdict = parseVerdict(result.stdout);
-    const failed = shouldFail(verdict);
-
-    const artifactPath = await writeArtifact(`pre-commit/${Date.now()}.md`, result.stdout);
-    
-    if (failed) {
-      console.error('❌ Risk Gate: BLOCK');
-      console.error(`Reasoning: ${result.stdout.slice(0, 500)}...`);
-      console.error(`Full report: ${artifactPath}`);
-      process.exit(1);
-    } else {
-      console.log('✅ Risk Gate: ALLOW');
-      process.exit(0);
-    }
-  } catch (error: any) {
-    console.error('💥 Error in pre-commit hook:', error.message);
-    // Fail open or closed? GEMINI.md says "defaulting to Fail Closed in CI".
-    // For pre-commit, maybe fail open to not block dev if AI is down? 
-    // Let's stick to fail closed for security.
-    process.exit(1);
-  }
-}
-
-main();
-```
-
-pack/workflows/ci-pr-review.md
-```
-# CI PR Review
-
-You are a senior engineer performing a critical PR review. Your goal is to identify bugs, security flaws, or major architectural regressions.
-
-## Criteria for FAIL:
-- **Critical Bugs**: Logic errors that will lead to crashes or incorrect data.
-- **Security Vulnerabilities**: Injection flaws, insecure storage, or broken access control.
-- **Performance Regressions**: Obvious O(n^2) logic on hot paths or resource leaks.
-- **Missing Tests**: New complex logic added without corresponding unit tests.
-
-## Criteria for PASS:
-- Code is well-structured, follows best practices, and includes sufficient tests.
-- Minor stylistic issues should be noted but do NOT constitute a FAIL.
-
-## Instructions:
-- Provide a clear, structured review.
-- Start with a summary of changes.
-- Use a bulleted list for specific findings.
-- You MUST conclude with a verdict in bold: **PASS** or **FAIL**.
-
-## PR Diff:
-{{diff}}
-
-## Verdict:
-(Provide your reasoning here and end with **PASS** or **FAIL**)
-```
-
-pack/workflows/lint-fix.md
-```
-# AI Lint Fixer
-
-You are an expert developer specializing in code quality. Your goal is to fix the provided lint errors in the given file context.
-
-## Instructions:
-- Analyze the error log and the file content.
-- Generate a patch to fix ONLY the reported errors.
-- You MUST provide the fix in a strict **SEARCH/REPLACE** block format for each change.
-
-## Format:
-<<<<SEARCH
-(exact original code)
-====
-(fixed code)
->>>>REPLACE
-
-## Error Log:
-{{errorLog}}
-
-## File Context ({{filePath}}):
-{{fileContent}}
-
-## Fixed Patches:
-(Provide SEARCH/REPLACE blocks)
-```
-
-pack/workflows/pre-commit-review.md
-```
-# Pre-commit Risk Review
-
-You are a senior security and stability auditor. Your goal is to analyze the provided staged git diff and determine if it contains high-risk changes that should be blocked before commit.
-
-## Categories of High-Risk Changes:
-1. **Hardcoded Secrets**: API keys, passwords, private keys, or credentials.
-2. **Massive Deletions**: Unintentional or dangerous removal of critical logic or documentation.
-3. **Complex Logic**: Highly complex changes without corresponding test updates.
-4. **Breaking Changes**: Obvious regressions or breaking API changes without a major version intent.
-
-## Instructions:
-- Analyze the diff carefully.
-- Be concise but specific in your reasoning.
-- You MUST conclude with a verdict in bold: **ALLOW** or **BLOCK**.
-
-## Git Diff:
-{{diff}}
-
-## Verdict:
-(Provide your reasoning here and end with **ALLOW** or **BLOCK**)
-```
-
-bin/cline-pack.ts
-```
-#!/usr/bin/env npx tsx
-import { Command } from 'commander';
-import { listWorkflows, getWorkflow } from '../src/manifest';
-import { installPack } from '../src/install';
-import { runHeadless, runInteractive } from '../src/cline';
-import { renderPrompt } from '../src/render';
-import path from 'path';
-
-const program = new Command();
-
-program
-  .name('cline-pack')
-  .description('Standardized daily software engineering workflows powered by Cline')
-  .version('1.0.0');
-
-program
-  .command('list')
-  .description('List available workflows')
-  .action(() => {
-    const workflows = listWorkflows();
-    console.log('\n🚀 Available Workflows:');
-    workflows.forEach(w => {
-      console.log(`- ${w.id.padEnd(15)}: ${w.name} (${w.mode})`);
-      console.log(`  ${w.description}`);
+      child.on('close', (code) => {
+        if (code === 0) {
+          resolve({ stepId: step.id, status: 'success', stdout, stderr });
+        } else {
+          resolve({ 
+            stepId: step.id, 
+            status: 'failure', 
+            exitCode: code || 1, 
+            stdout, 
+            stderr,
+            error: new Error(`Command failed with exit code ${code}`)
+          });
+        }
+      });
     });
-    console.log('');
-  });
-
-program
-  .command('install')
-  .description('Install the workflow pack into the current repository')
-  .option('-f, --force', 'Overwrite existing files', false)
-  .action(async (options) => {
-    console.log('📦 Installing Cline Workflow Pack...');
-    try {
-      await installPack(process.cwd(), { overwrite: options.force });
-      console.log('✨ Installation complete!');
-    } catch (error: any) {
-      console.error(`💥 Installation failed: ${error.message}`);
-      process.exit(1);
-    }
-  });
-
-program
-  .command('run <id>')
-  .description('Run a specific workflow')
-  .option('-i, --interactive', 'Run in interactive mode', false)
-  .action(async (id, options) => {
-    const workflow = getWorkflow(id);
-    if (!workflow) {
-      console.error(`❌ Workflow not found: ${id}`);
-      process.exit(1);
-    }
-
-    console.log(`🎬 Running workflow: ${workflow.name}...`);
-    
-    // For MVP, we'll assume the script runner logic handles the specifics.
-    // However, the CLI can also directly trigger the headless mode if it's a simple prompt.
-    // Most workflows in our pack have dedicated scripts in pack/scripts.
-    // Let's just delegate to those scripts for now via tsx.
-    
-    const scriptPath = path.join(__dirname, '../pack/scripts', `${id}.ts`);
-    const { spawn } = require('child_process');
-    
-    const child = spawn('npx', ['tsx', scriptPath], {
-      stdio: 'inherit'
-    });
-
-    child.on('close', (code: number) => {
-      process.exit(code);
-    });
-  });
-
-program.parse();
+  }
+}
 ```
 
 </source_code>

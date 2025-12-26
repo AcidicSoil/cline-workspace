@@ -23,7 +23,9 @@ node_modules/
 
 # OS specific
 .DS_Store
-.archived
+.archived/
 
-codefetch
-dist
+codefetch/
+dist/
+*.tsbuildinfo
+.oracle/

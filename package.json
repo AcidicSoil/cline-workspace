@@ -5,15 +5,17 @@
   "scripts": {
     "build": "pnpm --recursive run build",
     "test": "jest",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "code": "codefetch --include-dir packages --exclude-file *.tsbuildinfo -o src.md"
   },
   "devDependencies": {
-    "typescript": "^5.0.0",
+    "@types/jest": "^29.0.0",
+    "@types/node": "^20.0.0",
+    "codefetch": "^2.2.0",
+    "eslint": "^8.0.0",
     "jest": "^29.0.0",
     "ts-jest": "^29.0.0",
-    "eslint": "^8.0.0",
-    "@types/node": "^20.0.0",
-    "@types/jest": "^29.0.0"
+    "typescript": "^5.0.0"
   },
-  "packageManager": "pnpm@8.0.0"
+  "packageManager": "pnpm@10.25.0"
 }
