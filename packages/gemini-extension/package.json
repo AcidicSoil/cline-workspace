@@ -1,0 +1,20 @@
+{
+  "name": "@workflow-pack/gemini-extension",
+  "version": "0.1.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@workflow-pack/foundation": "workspace:*",
+    "@workflow-pack/registry": "workspace:*",
+    "@workflow-pack/workflow": "workspace:*",
+    "@workflow-pack/workflows": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/node": "^20.0.0"
+  }
+}

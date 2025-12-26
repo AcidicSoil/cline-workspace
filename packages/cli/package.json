@@ -16,6 +16,8 @@
     "@workflow-pack/registry": "workspace:*",
     "@workflow-pack/runner": "workspace:*",
     "@workflow-pack/workflows": "workspace:*",
+    "@workflow-pack/gemini-extension": "workspace:*",
+    "@workflow-pack/lmstudio-plugin": "workspace:*",
     "commander": "^11.0.0",
     "chalk": "^4.1.2",
     "ora": "^5.4.1",

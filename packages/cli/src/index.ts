@@ -4,6 +4,7 @@ import { WorkflowRegistry } from '@workflow-pack/registry';
 import { workflows as builtInWorkflows } from '@workflow-pack/workflows';
 import { makeListCommand } from './commands/list';
 import { makeRunCommand } from './commands/run';
+import { makeGenerateCommand } from './commands/generate';
 import { Logger } from '@workflow-pack/foundation';
 import fs from 'fs/promises';
 import path from 'path';
@@ -36,6 +37,7 @@ async function main() {
 
   program.addCommand(makeListCommand(registry));
   program.addCommand(makeRunCommand(registry));
+  program.addCommand(makeGenerateCommand());
 
   await program.parseAsync(process.argv);
 }

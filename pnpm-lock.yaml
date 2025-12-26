@@ -35,6 +35,12 @@ importers:
       '@workflow-pack/foundation':
         specifier: workspace:*
         version: link:../foundation
+      '@workflow-pack/gemini-extension':
+        specifier: workspace:*
+        version: link:../gemini-extension
+      '@workflow-pack/lmstudio-plugin':
+        specifier: workspace:*
+        version: link:../lmstudio-plugin
       '@workflow-pack/registry':
         specifier: workspace:*
         version: link:../registry
@@ -73,6 +79,28 @@ importers:
         specifier: ^5.0.0
         version: 5.9.3
 
+  packages/gemini-extension:
+    dependencies:
+      '@workflow-pack/foundation':
+        specifier: workspace:*
+        version: link:../foundation
+      '@workflow-pack/registry':
+        specifier: workspace:*
+        version: link:../registry
+      '@workflow-pack/workflow':
+        specifier: workspace:*
+        version: link:../workflow
+      '@workflow-pack/workflows':
+        specifier: workspace:*
+        version: link:../workflows
+    devDependencies:
+      '@types/node':
+        specifier: ^20.0.0
+        version: 20.19.27
+      typescript:
+        specifier: ^5.0.0
+        version: 5.9.3
+
   packages/integrations:
     dependencies:
       '@workflow-pack/foundation':
@@ -81,6 +109,28 @@ importers:
       execa:
         specifier: ^5.1.1
         version: 5.1.1
+    devDependencies:
+      '@types/node':
+        specifier: ^20.0.0
+        version: 20.19.27
+      typescript:
+        specifier: ^5.0.0
+        version: 5.9.3
+
+  packages/lmstudio-plugin:
+    dependencies:
+      '@workflow-pack/foundation':
+        specifier: workspace:*
+        version: link:../foundation
+      '@workflow-pack/registry':
+        specifier: workspace:*
+        version: link:../registry
+      '@workflow-pack/workflow':
+        specifier: workspace:*
+        version: link:../workflow
+      '@workflow-pack/workflows':
+        specifier: workspace:*
+        version: link:../workflows
     devDependencies:
       '@types/node':
         specifier: ^20.0.0
