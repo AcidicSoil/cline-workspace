@@ -29,3 +29,4 @@ codefetch/
 dist/
 *.tsbuildinfo
 .oracle/
+.ck

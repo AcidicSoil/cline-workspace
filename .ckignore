@@ -1,0 +1,19 @@
+# Images and media
+*.png
+*.jpg
+*.mp4
+*.mp3
+
+# Config files
+*.json
+*.yaml
+
+# Build artifacts
+target/
+dist/
+build/
+node_modules/
+
+# Custom patterns
+temp/
+*.bak
